@@ -1,0 +1,155 @@
+CONTRATO DE LICENCA DE USO DE SOFTWARE E TERMOS E CONDICOES
+ApexDynamics
+Versao 1.0 - 2025
+
+LEIA ESTE DOCUMENTO COM ATENCAO ANTES DE PROSSEGUIR COM A INSTALACAO.
+
+Ao clicar em "Aceito" e prosseguir com a instalacao do ApexDynamics, o usuario declara ter lido, compreendido e concordado integralmente com todos os termos e condicoes deste Contrato de Licenca de Uso de Software ("Contrato"), celebrado entre o usuario ("Licenciado") e a ApexDynamics ("Licenciante"). Caso nao concorde com qualquer disposicao deste Contrato, o usuario devera cancelar imediatamente a instalacao e abster-se de utilizar o software.
+
+------------------------------------------------------------------------
+CLAUSULA 1 - OBJETO E DEFINICOES
+------------------------------------------------------------------------
+
+1.1. O presente Contrato tem por objeto disciplinar o uso do software ApexDynamics, incluindo todos os seus modulos, arquivos, bibliotecas, atualizacoes, documentacao e conteudos correlatos ("Software").
+
+1.2. Para fins deste Contrato, entende-se por:
+- "Software": o programa de computador ApexDynamics e todos os seus componentes;
+- "Licenciado": a pessoa fisica ou juridica que instala ou utiliza o Software;
+- "Chave de Licenca": identificador unico gerado pelo Software, vinculado ao hardware do equipamento do Licenciado;
+- "Codigo-Fonte": conjunto de instrucoes originais escritas em linguagem de programacao que compoem o Software;
+- "Uso Autorizado": uso do Software estritamente nos termos deste Contrato.
+
+------------------------------------------------------------------------
+CLAUSULA 2 - CONCESSAO DE LICENCA
+------------------------------------------------------------------------
+
+2.1. A ApexDynamics concede ao Licenciado uma licenca pessoal, limitada, nao exclusiva, nao sublicenciavel e intransferivel para instalar e utilizar o Software exclusivamente em um (1) equipamento de sua propriedade ou posse legitima, para fins relacionados aos produtos e servicos da ApexDynamics.
+
+2.2. Esta licenca nao implica transferencia de propriedade do Software nem de qualquer direito sobre ele, sendo regida pela Lei n 9.609/1998 (Lei de Protecao da Propriedade Intelectual de Programa de Computador) e pela Lei n 9.610/1998 (Lei de Direitos Autorais).
+
+2.3. O Licenciado nao podera, sob nenhuma hipotese, ceder, sublicenciar, alugar, arrendar, emprestar ou transferir o Software ou esta licenca a qualquer terceiro, seja a titulo oneroso ou gratuito.
+
+------------------------------------------------------------------------
+CLAUSULA 3 - RESTRICOES DE USO
+------------------------------------------------------------------------
+
+3.1. E expressamente vedado ao Licenciado, sob pena de rescisao imediata desta licenca e responsabilizacao civil e criminal:
+
+a) Copiar, reproduzir, redistribuir, publicar ou compartilhar o Software ou qualquer parte dele, no todo ou em parte, por qualquer meio fisico ou digital;
+
+b) Modificar, adaptar, traduzir, criar obras derivadas, alterar ou incorporar o Software a outros programas;
+
+c) Praticar engenharia reversa, descompilar, desmontar, decodificar ou tentar por qualquer meio acessar, extrair ou reconstituir o Codigo-Fonte do Software, conforme vedado pelo artigo 6, paragrafo 1 da Lei n 9.609/1998;
+
+d) Acessar, obter, publicar, divulgar, compartilhar ou comercializar o Codigo-Fonte do Software por qualquer meio, inclusive mediante exploracao de vulnerabilidades, interceptacao de comunicacao ou uso de ferramentas de analise de software;
+
+e) Remover, ocultar, alterar ou falsificar quaisquer avisos de direitos autorais, marcas registradas, legendas de propriedade ou outros avisos de titularidade presentes no Software;
+
+f) Utilizar o Software para desenvolver, direta ou indiretamente, produto concorrente ou equivalente;
+
+g) Utilizar o Software de forma que viole legislacao aplicavel, ordem publica ou direitos de terceiros.
+
+------------------------------------------------------------------------
+CLAUSULA 4 - PROIBICAO DE COMPARTILHAMENTO DE CREDENCIAIS E CONTA
+------------------------------------------------------------------------
+
+4.1. As credenciais de acesso (usuario e senha) associadas ao Chave de Licenca sao estritamente pessoais e intransferiveis. O Licenciado e o unico e exclusivo responsavel pela guarda, sigilo e uso de suas credenciais.
+
+4.2. E expressamente proibido:
+
+a) Compartilhar, ceder, vender ou divulgar credenciais de acesso a qualquer terceiro, independentemente do vinculo existente entre as partes;
+
+b) Permitir que terceiros utilizem a conta do Licenciado, com ou sem seu conhecimento;
+
+c) Utilizar credenciais de terceiros para acessar o Software;
+
+d) Criar contas em nome de terceiros ou com dados falsos.
+
+4.3. Em caso de comprometimento das credenciais, o Licenciado devera comunicar imediatamente a ApexDynamics, sendo responsavel por quaisquer acoes realizadas com sua conta ate o momento da comunicacao formal.
+
+4.4. O Licenciado sera solidariamente responsavel pelos danos causados por terceiros que acessem o Software mediante credenciais por ele compartilhadas, nos termos dos artigos 186, 187 e 927 do Codigo Civil Brasileiro (Lei n 10.406/2002).
+
+------------------------------------------------------------------------
+CLAUSULA 5 - VINCULACAO POR HARDWARE E IDENTIFICADOR UNICO (Chave de Licenca)
+------------------------------------------------------------------------
+
+5.1. O Software gera e utiliza um identificador unico ("Chave de Licenca") vinculado aos dados de hardware do equipamento onde foi instalado. Este identificador e gerado localmente e constitui mecanismo de protecao contra uso nao autorizado.
+
+5.2. O Chave de Licenca e intransferivel e nao pode ser migrado para outro equipamento sem autorizacao expressa e escrita da ApexDynamics.
+
+5.3. Qualquer tentativa de simular, falsificar, contornar ou manipular o Chave de Licenca ou os dados de hardware associados constitui violacao grave deste Contrato e podera caracterizar crime nos termos do artigo 313-A do Codigo Penal Brasileiro e do artigo 154-A do Codigo Penal (invasao de dispositivo informatico).
+
+------------------------------------------------------------------------
+CLAUSULA 6 - PROPRIEDADE INTELECTUAL
+------------------------------------------------------------------------
+
+6.1. O Software, seu Codigo-Fonte, design, arquitetura, algoritmos, interfaces, documentacao, marca, nome e todos os elementos que o compoem sao de propriedade exclusiva da ApexDynamics, protegidos nos termos da Lei n 9.609/1998, da Lei n 9.610/1998 e da Lei n 9.279/1996 (Lei de Propriedade Industrial).
+
+6.2. A violacao dos direitos de propriedade intelectual da ApexDynamics sujeita o infrator as sancoes previstas no artigo 184 do Codigo Penal Brasileiro (violacao de direito autoral), com pena de reclusao de dois a quatro anos, alem de multa, bem como a reparacao civil integral pelos danos causados, conforme os artigos 102 a 110 da Lei n 9.610/1998.
+
+6.3. A ApexDynamics reserva-se o direito de tomar todas as medidas judiciais e extrajudiciais cabiveis para proteger seus direitos de propriedade intelectual.
+
+------------------------------------------------------------------------
+CLAUSULA 7 - PRIVACIDADE E TRATAMENTO DE DADOS
+------------------------------------------------------------------------
+
+7.1. O Software coleta exclusivamente dados de hardware local do equipamento do Licenciado para fins de geracao e validacao do Chave de Licenca. Tais dados sao tratados em conformidade com a Lei n 13.709/2018 (Lei Geral de Protecao de Dados Pessoais - LGPD).
+
+7.2. A ApexDynamics nao compartilha, vende ou cede dados do Licenciado a terceiros, salvo por determinacao legal ou judicial.
+
+7.3. O Licenciado, na qualidade de titular dos dados, podera exercer os direitos previstos no artigo 18 da LGPD, incluindo acesso, correcao, exclusao e portabilidade, mediante solicitacao formal a ApexDynamics.
+
+------------------------------------------------------------------------
+CLAUSULA 8 - RESCISAO E CONSEQUENCIAS DA VIOLACAO
+------------------------------------------------------------------------
+
+8.1. Este Contrato sera rescindido automaticamente e de pleno direito, independentemente de notificacao, na hipotese de o Licenciado violar qualquer de suas disposicoes.
+
+8.2. Com a rescisao, o Licenciado devera, imediatamente:
+a) Cessar todo e qualquer uso do Software;
+b) Desinstalar e eliminar todas as copias do Software em seu poder;
+c) Destruir qualquer material obtido a partir do Software.
+
+8.3. A rescisao nao exime o Licenciado da responsabilidade por danos causados durante o periodo de vigencia ou em razao da violacao, nem prejudica o direito da ApexDynamics de buscar indenizacao integral pelos prejuizos sofridos.
+
+8.4. A ApexDynamics reserva-se o direito de bloquear o acesso ao Software de forma remota, sem aviso previo, em caso de violacao comprovada ou suspeita fundada deste Contrato.
+
+------------------------------------------------------------------------
+CLAUSULA 9 - LIMITACAO DE RESPONSABILIDADE
+------------------------------------------------------------------------
+
+9.1. O Software e fornecido "no estado em que se encontra" (as is). A ApexDynamics nao garante que o Software sera isento de erros, interrupcoes ou que atenderaa integralmente as expectativas do Licenciado.
+
+9.2. Em nenhuma hipotese a ApexDynamics sera responsavel por danos indiretos, incidentais, especiais, consequentes ou punitivos decorrentes do uso ou impossibilidade de uso do Software.
+
+------------------------------------------------------------------------
+CLAUSULA 10 - ATUALIZACOES E DESCONTINUACAO
+------------------------------------------------------------------------
+
+10.1. A ApexDynamics reserva-se o direito de, a qualquer tempo e sem aviso previo, lanccar atualizacoes, modificar funcionalidades, alterar os termos desta licenca ou descontinuar o Software.
+
+10.2. A continuidade do uso do Software apos a publicacao de novos termos implicara a aceitacao automatica das alteracoes.
+
+------------------------------------------------------------------------
+CLAUSULA 11 - DISPOSICOES GERAIS
+------------------------------------------------------------------------
+
+11.1. Este Contrato constitui o acordo integral entre as partes e substitui quaisquer acordos anteriores, escritos ou verbais, relativos ao objeto aqui tratado.
+
+11.2. A tolerancia da ApexDynamics quanto a qualquer violacao nao implicara novacao, renuncia ou alteracao das disposicoes deste Contrato.
+
+11.3. Caso qualquer clausula deste Contrato seja declarada invalida ou inexequivel, as demais permanencerao em pleno vigor.
+
+------------------------------------------------------------------------
+CLAUSULA 12 - LEGISLACAO APLICAVEL E FORO
+------------------------------------------------------------------------
+
+12.1. Este Contrato e regido exclusivamente pelas leis da Republica Federativa do Brasil.
+
+12.2. As partes elegem o foro da comarca da sede da ApexDynamics como competente para dirimir quaisquer controversias decorrentes deste Contrato, com renuncia expressa a qualquer outro, por mais privilegiado que seja, nos termos do artigo 63 do Codigo de Processo Civil (Lei n 13.105/2015).
+
+------------------------------------------------------------------------
+
+Ao prosseguir com a instalacao, o Licenciado declara ter lido, compreendido e aceito integralmente todos os termos e condicoes acima.
+
+(c) 2025 ApexDynamics. Todos os direitos reservados.
