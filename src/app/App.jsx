@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { findPitExitTime, analyzeLap } from '@/core/lapAnalyzer';
 import { useColors } from '@/context/ThemeContext';
 import { CarWeightProvider } from '@/context/CarWeightContext';
+import { TeamProvider, useTeam } from '@/context/TeamContext';
 import { useWorkspaces, useTelemetryData } from '@/hooks';
 import { saveCSV, loadCSV, deleteCSV, verifyCSV } from '@/storage/sessionStore';
 import { parseCSV } from '@/core/parsers/csvParser';
@@ -31,6 +32,7 @@ import {
   PerformanceTab,
   CalendarioTab,
   LapTimeTab,
+  EquipeTab,
 } from '@/components/tabs';
 
 /* ── Canais monitorados para alertas de vitals ──────────────────────── */
@@ -62,7 +64,16 @@ function makeMapSetter(setMap, wsId) {
    App — Orquestrador raiz
 ═══════════════════════════════════════════════════════════════════════ */
 export default function App() {
+  return (
+    <TeamProvider>
+      <AppInner />
+    </TeamProvider>
+  );
+}
+
+function AppInner() {
   const COLORS = useColors();
+  const { pendingCount, unreadChat, markChatRead, setTeamTabOpen, deviceAssignments } = useTeam();
 
   /* ── Workspace + perfis ─────────────────────────────────────────── */
   const profiles = useWorkspaces();
@@ -89,7 +100,6 @@ export default function App() {
   const [pneusFormMap,        setPneusFormMap]        = useState({});
   const [tempFormMap,         setTempFormMap]         = useState({});
   const [segmentBoundMap,     setSegmentBoundMap]     = useState({});
-
   // Valores do workspace ativo (com defaults)
   const PIT_EXIT_DEFAULTS     = { speedKmh: 30, rpmMin: 3000 };
   const filterMode            = filterModeMap[wsId]      ?? 'filtered';
@@ -171,6 +181,16 @@ export default function App() {
   const activeTab = (!isLoaded && TELEMETRY_ONLY_TABS.has(profiles.activeTab))
     ? 'overview'
     : profiles.activeTab;
+
+  // Sincroniza teamTabOpen com a aba ativa
+  useEffect(() => {
+    if (activeTab === 'equipe') {
+      setTeamTabOpen(true);
+      markChatRead();
+    } else {
+      setTeamTabOpen(false);
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Alertas ─────────────────────────────────────────────────────── */
   const partsAlerts = useMemo(() => {
@@ -425,13 +445,104 @@ export default function App() {
   const handleLogout     = () => { localStorage.removeItem('rt_session'); window.location.reload(); };
   const handleNewSession = () => { clearData(); setPreparationMode(false); };
 
+  /* ── Equipe: aplica medições aprovadas nos campos da tab correspondente */
+  const handleApplyMeasurement = useCallback((measurement) => {
+    console.log('[ApplyMeasurement] category:', measurement.category, 'data:', measurement.data, 'wsId:', wsId);
+
+    // Se o dispositivo está atribuído a um perfil, muda para esse perfil
+    const assignedIds = deviceAssignments[measurement.deviceId];
+    if (assignedIds) {
+      const firstId = Array.isArray(assignedIds) ? assignedIds[0] : assignedIds;
+      if (firstId && firstId !== profiles.activeProfileId) {
+        profiles.setActiveProfile(firstId);
+      }
+    }
+
+    const cat = measurement.category;
+    const d   = measurement.data || {};
+
+    // ── Pressões de pneus ──────────────────────────────────────────
+    if (cat === 'pressures' || cat === 'tires' || cat === 'pressoes') {
+      const tyresUpdate = {};
+      const posMap = { FL: 'fl', FR: 'fr', RL: 'rl', RR: 'rr' };
+      for (const [mobileKey, desktopKey] of Object.entries(posMap)) {
+        if (d[mobileKey]) {
+          tyresUpdate[desktopKey] = {};
+          if (d[mobileKey].fria   != null) tyresUpdate[desktopKey].cold = String(d[mobileKey].fria);
+          if (d[mobileKey].quente != null) tyresUpdate[desktopKey].hot  = String(d[mobileKey].quente);
+        }
+      }
+      console.log('[ApplyMeasurement] pneus tyresUpdate:', tyresUpdate);
+      setPneusFormMap((prev) => {
+        const cur = prev[wsId] || {};
+        const prevTyres = cur.tyres || {};
+        const mergedTyres = { ...prevTyres };
+        for (const [corner, vals] of Object.entries(tyresUpdate)) {
+          mergedTyres[corner] = { ...(prevTyres[corner] || {}), ...vals };
+        }
+        const merged = { ...cur, tyres: mergedTyres };
+        if (d.observacoes) {
+          merged.conditions = { ...(cur.conditions || {}), notes: d.observacoes };
+        }
+        console.log('[ApplyMeasurement] pneusFormMap updated for wsId:', wsId, merged);
+        return { ...prev, [wsId]: merged };
+      });
+      profiles.setActiveTab('pneus');
+
+    // ── Temperaturas / condições ambientais ─────────────────────────
+    } else if (cat === 'temperature' || cat === 'temperaturas') {
+      const mapped = {};
+      if (d.date)                         mapped.date         = String(d.date);
+      if (d.time)                         mapped.time         = String(d.time);
+      if (d.tempPista    != null)         mapped.trackTemp    = String(d.tempPista);
+      if (d.tempAmbiente != null)         mapped.ambientTemp  = String(d.tempAmbiente);
+      if (d.umidade      != null)         mapped.humidity     = String(d.umidade);
+      if (d.altitude     != null)         mapped.altitude     = String(d.altitude);
+      if (d.pressaoAtm   != null)         mapped.baroPressure = String(d.pressaoAtm);
+      if (d.vento        != null)         mapped.windSpeed    = String(d.vento);
+      if (d.direcaoVento && d.direcaoVento !== '—') mapped.windDir = d.direcaoVento;
+      if (d.precipitacao && d.precipitacao !== '—') mapped.precipitation = d.precipitacao;
+      if (d.condicaoPista) {
+        const condMap = { 'Seca': 'dry', 'Úmida': 'damp', 'Molhada': 'wet', 'Intermediária': 'intermediate' };
+        if (!mapped.precipitation) mapped.precipitation = condMap[d.condicaoPista] || d.condicaoPista;
+      }
+      console.log('[ApplyMeasurement] temperature mapped:', mapped);
+      setTempFormMap((prev) => {
+        const updated = { ...(prev[wsId] || {}), ...mapped };
+        console.log('[ApplyMeasurement] tempFormMap updated for wsId:', wsId, updated);
+        return { ...prev, [wsId]: updated };
+      });
+      profiles.setActiveTab('temperature');
+
+    // ── Setup mecânico ──────────────────────────────────────────────
+    } else if (cat === 'setup' || cat === 'mecanica') {
+      console.log('[ApplyMeasurement] setup data:', d);
+      setSetupFormMap((prev) => ({
+        ...prev,
+        [wsId]: { ...(prev[wsId] || {}), ...d },
+      }));
+      profiles.setActiveTab('setup');
+    }
+  }, [wsId, profiles, deviceAssignments]);
+
   /* ═══════════════════════════════════════════════════════════════════
      Render
   ═══════════════════════════════════════════════════════════════════ */
   return (
     <CarWeightProvider activeProfileId={profiles.activeProfileId}>
     <div style={{ background: COLORS.bg, minHeight: '100vh', color: COLORS.textPrimary }}>
-      <Header fileName={isLoaded ? data.fileName : null} onLoad={loadFile} onLogout={handleLogout} />
+      <Header
+        fileName={isLoaded ? data.fileName : null}
+        onLoad={loadFile}
+        onLogout={handleLogout}
+        teamPending={pendingCount}
+        teamUnread={unreadChat}
+        onTeamClick={() => {
+          profiles.setActiveTab('equipe');
+          setTeamTabOpen(true);
+          markChatRead();
+        }}
+      />
       <WorkspaceBar
         workspaces={profiles.workspaces}
         activeWorkspaceId={profiles.activeWorkspaceId}
@@ -567,6 +678,7 @@ export default function App() {
               onLoadSetup={handleLoadSetup}
               onDeleteSetup={handleDeleteSetup}
               setupForm={setupForm} setSetupForm={setSetupForm}
+              profileSessions={profiles.activeProfile?.sessions || []}
             />
           )}
 
@@ -714,6 +826,14 @@ export default function App() {
             <LapTimeTab
               setupForm={setupForm}
               setSetupForm={setSetupForm}
+              profileId={profiles.activeProfileId}
+            />
+          )}
+
+          {activeTab === 'equipe' && (
+            <EquipeTab
+              onApplyMeasurement={handleApplyMeasurement}
+              profilesList={profiles.profiles}
             />
           )}
 

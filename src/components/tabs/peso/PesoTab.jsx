@@ -331,10 +331,19 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
   const C   = useColors();
   const profileId = activeProfile?.id || 'default';
   const {
-    pesoCarro: ctxPesoCarro, setPesoCarro,
+    pesoCarro:  ctxPesoCarro,  setPesoCarro,
     pesoPiloto: ctxPesoPiloto, setPesoPiloto,
-    wheelbase: ctxWheelbase, setWheelbase,
-    violaRegulamento, excesso, pesoMinimo,
+    wheelbase:  ctxWheelbase,  setWheelbase,
+    trackFront: ctxTrackFront, setTrackFront,
+    trackRear:  ctxTrackRear,  setTrackRear,
+    cgHeight:   ctxCgHeight,   setCgHeight,
+    rcFront:    ctxRcFront,    setRcFront,
+    rcRear:     ctxRcRear,     setRcRear,
+    tankPos:    ctxTankPos,    setTankPos,
+    violaRegulamento, excesso, pesoMinimo, setPesoHomologado,
+    violaWheelbase,   excessoWheelbase,  dimWheelbase,
+    violaTrackFront,  excessoTrackFront, dimBitolaDiant,
+    violaTrackRear,   excessoTrackRear,  dimBitolaTrasei,
     assignedPilots, selectedPilotId, selectPilot,
   } = useCarWeight();
   // Ref para não causar loop ao sincronizar do contexto para o estado local
@@ -369,14 +378,23 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
         if (ctxPesoCarro)  overrides.pesoCarro  = ctxPesoCarro;
         if (ctxPesoPiloto) overrides.pesoPiloto = ctxPesoPiloto;
         if (ctxWheelbase)  overrides.wheelbase  = ctxWheelbase;
+        if (ctxTrackFront) overrides.trackFront = ctxTrackFront;
+        if (ctxTrackRear)  overrides.trackRear  = ctxTrackRear;
         const loaded = { ...EMPTY, ...saved, ...overrides };
         setD(loaded);
         const hasOverrides = Object.keys(overrides).length > 0;
         if (hasOverrides) localStorage.setItem(key, JSON.stringify(loaded));
         // Inicializa contexto com valores do localStorage onde ainda estiver vazio
-        if (!ctxPesoCarro  && saved.pesoCarro)  setPesoCarro(saved.pesoCarro);
-        if (!ctxPesoPiloto && saved.pesoPiloto) setPesoPiloto(saved.pesoPiloto);
-        if (!ctxWheelbase  && saved.wheelbase)  setWheelbase(saved.wheelbase);
+        if (!ctxPesoCarro  && saved.pesoCarro)       setPesoCarro(saved.pesoCarro);
+        if (!ctxPesoPiloto && saved.pesoPiloto)      setPesoPiloto(saved.pesoPiloto);
+        if (!ctxWheelbase  && saved.wheelbase)       setWheelbase(saved.wheelbase);
+        if (!ctxTrackFront && saved.trackFront)      setTrackFront(saved.trackFront);
+        if (!ctxTrackRear  && saved.trackRear)       setTrackRear(saved.trackRear);
+        if (!ctxCgHeight   && saved.alturaCG)        setCgHeight(saved.alturaCG);
+        if (!ctxRcFront    && saved.rollCenterFront) setRcFront(saved.rollCenterFront);
+        if (!ctxRcRear     && saved.rollCenterRear)  setRcRear(saved.rollCenterRear);
+        if (!ctxTankPos    && saved.tanqueLongPos)   setTankPos(saved.tanqueLongPos);
+        if (!pesoMinimo    && saved.pesoHomologado)  setPesoHomologado(saved.pesoHomologado);
       }
     } catch { /* ignora */ }
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -406,34 +424,113 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
   }, [ctxPesoPiloto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!ctxWheelbase) return;
-    if (ctxWheelbase === d.wheelbase) return;
+    if (!ctxWheelbase || ctxWheelbase === d.wheelbase) return;
     syncingFromCtx.current = true;
     const next = { ...d, wheelbase: ctxWheelbase };
-    setD(next);
-    localStorage.setItem(key, JSON.stringify(next));
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
   }, [ctxWheelbase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 2: sincroniza pesoMinimo (regulamentações) → pesoHomologado local
+  useEffect(() => {
+    if (!pesoMinimo || pesoMinimo === d.pesoHomologado) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, pesoHomologado: pesoMinimo };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [pesoMinimo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 5: sync contexto → trackFront local
+  useEffect(() => {
+    if (!ctxTrackFront || ctxTrackFront === d.trackFront) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, trackFront: ctxTrackFront };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxTrackFront]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 6: sync contexto → trackRear local
+  useEffect(() => {
+    if (!ctxTrackRear || ctxTrackRear === d.trackRear) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, trackRear: ctxTrackRear };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxTrackRear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 8: sync contexto → alturaCG local (SetupSheetTab pode atualizar)
+  useEffect(() => {
+    if (!ctxCgHeight || ctxCgHeight === d.alturaCG) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, alturaCG: ctxCgHeight };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxCgHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 9: sync contexto → rollCenterFront local
+  useEffect(() => {
+    if (!ctxRcFront || ctxRcFront === d.rollCenterFront) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, rollCenterFront: ctxRcFront };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxRcFront]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 10: sync contexto → rollCenterRear local
+  useEffect(() => {
+    if (!ctxRcRear || ctxRcRear === d.rollCenterRear) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, rollCenterRear: ctxRcRear };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxRcRear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tópico 11: sync contexto → tanqueLongPos local
+  useEffect(() => {
+    if (!ctxTankPos || ctxTankPos === d.tanqueLongPos) return;
+    syncingFromCtx.current = true;
+    const next = { ...d, tanqueLongPos: ctxTankPos };
+    setD(next); localStorage.setItem(key, JSON.stringify(next));
+  }, [ctxTankPos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carregar snapshot vindo da aba Perfis
   useEffect(() => {
     if (profileWeightLoad?.seq > 0 && profileWeightLoad?.data) {
       const loaded = { ...EMPTY, ...profileWeightLoad.data };
       persist(loaded);
-      if (loaded.pesoCarro)  setPesoCarro(loaded.pesoCarro);
-      if (loaded.pesoPiloto) setPesoPiloto(loaded.pesoPiloto);
-      if (loaded.wheelbase)  setWheelbase(loaded.wheelbase);
+      if (loaded.pesoCarro)       setPesoCarro(loaded.pesoCarro);
+      if (loaded.pesoPiloto)      setPesoPiloto(loaded.pesoPiloto);
+      if (loaded.wheelbase)       setWheelbase(loaded.wheelbase);
+      if (loaded.alturaCG)        setCgHeight(loaded.alturaCG);
+      if (loaded.rollCenterFront) setRcFront(loaded.rollCenterFront);
+      if (loaded.rollCenterRear)  setRcRear(loaded.rollCenterRear);
+      if (loaded.tanqueLongPos)   setTankPos(loaded.tanqueLongPos);
     }
   }, [profileWeightLoad?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = useCallback((field) => (val) => {
     persist({ ...d, [field]: val });
     if (!syncingFromCtx.current) {
-      if (field === 'pesoCarro')  setPesoCarro(val);
-      if (field === 'pesoPiloto') setPesoPiloto(val);
-      if (field === 'wheelbase')  setWheelbase(val);
+      if (field === 'pesoCarro')      setPesoCarro(val);
+      if (field === 'pesoPiloto')     setPesoPiloto(val);
+      if (field === 'wheelbase')      setWheelbase(val);
+      if (field === 'pesoHomologado') setPesoHomologado(val);
+      if (field === 'trackFront')     setTrackFront(val);
+      if (field === 'trackRear')      setTrackRear(val);
+      if (field === 'alturaCG')        setCgHeight(val);
+      if (field === 'rollCenterFront') setRcFront(val);
+      if (field === 'rollCenterRear')  setRcRear(val);
+      if (field === 'tanqueLongPos')   setTankPos(val);
     }
     syncingFromCtx.current = false;
-  }, [d, persist, setPesoCarro, setPesoPiloto, setWheelbase]);
+  }, [d, persist, setPesoCarro, setPesoPiloto, setPesoHomologado,
+      setWheelbase, setTrackFront, setTrackRear,
+      setCgHeight, setRcFront, setRcRear, setTankPos]);
+
+  // Auto-seleção: se há exatamente um piloto designado e pesoPiloto está vazio, preenche automaticamente
+  useEffect(() => {
+    if (assignedPilots.length === 0) return;
+    const pilot = assignedPilots.length === 1
+      ? assignedPilots[0]
+      : assignedPilots.find(p => p.id === selectedPilotId);
+    if (!pilot?.weightEquipped) return;
+    const val = String(pilot.weightEquipped);
+    if (assignedPilots.length === 1 && !selectedPilotId) selectPilot(pilot.id);
+    if (!d.pesoPiloto) { persist({ ...d, pesoPiloto: val }); setPesoPiloto(val); }
+  }, [assignedPilots, profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cross-tab: piloto designado a este perfil ──
   const assignedPilot = useMemo(() => readAssignedPilot(profileId), [profileId]);
@@ -562,26 +659,89 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
   return (
     <div style={{ padding: '20px 24px', maxWidth: 1200, margin: '0 auto' }}>
 
-      {/* ── Banner de infração regulamentar ────────────────────────── */}
-      {violaRegulamento && (
-        <div style={{
-          background: '#ff222215',
-          border: '1.5px solid #ff4444',
-          borderRadius: 10,
-          padding: '12px 16px',
-          marginBottom: 16,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}>
-          <span style={{ fontSize: 18 }}>🚨</span>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#ff4444' }}>
-              Infração Regulamentar — Peso
+      {/* ── Banner de infração — Peso ───────────────────────────────── */}
+      {violaRegulamento && (() => {
+        const car  = parseFloat(d.pesoCarro)  || 0;
+        const driv = parseFloat(d.pesoPiloto) || 0;
+        const total = car + driv;
+        return (
+          <div style={{
+            background: '#ff222215', border: '1.5px solid #ff4444',
+            borderRadius: 10, padding: '12px 16px', marginBottom: 8,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <span style={{ fontSize: 18 }}>🚨</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#ff4444' }}>
+                Infração Regulamentar — Peso
+              </div>
+              <div style={{ fontSize: 12, color: '#ff7777', marginTop: 2 }}>
+                {driv > 0
+                  ? `Peso total (carro ${car} kg + piloto ${driv} kg = ${total.toFixed(1)} kg)`
+                  : `Peso do carro (${car} kg)`
+                } está abaixo do mínimo regulamentar de <strong>{pesoMinimo} kg</strong>{' '}
+                — faltam <strong>{excesso} kg</strong>. O carro precisa ser mais pesado.
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: '#ff7777', marginTop: 2 }}>
-              Peso do carro ({d.pesoCarro} kg) excede o limite regulamentar de {pesoMinimo} kg
-              em <strong>{excesso} kg</strong>.
+          </div>
+        );
+      })()}
+
+      {/* ── Banner de infração — Wheelbase ─────────────────────────── */}
+      {violaWheelbase && (
+        <div style={{
+          background: '#ff880015', border: '1.5px solid #ff8800',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#ff8800' }}>
+              Infração Regulamentar — Wheelbase
+            </div>
+            <div style={{ fontSize: 12, color: '#ffaa44', marginTop: 2 }}>
+              Entre-eixos registrado ({d.wheelbase} mm) excede o limite regulamentar de{' '}
+              <strong>{dimWheelbase} mm</strong> em <strong>{excessoWheelbase} mm</strong>.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner de infração — Bitola Dianteira ───────────────────── */}
+      {violaTrackFront && (
+        <div style={{
+          background: '#ff880015', border: '1.5px solid #ff8800',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#ff8800' }}>
+              Infração Regulamentar — Via Dianteira
+            </div>
+            <div style={{ fontSize: 12, color: '#ffaa44', marginTop: 2 }}>
+              Bitola dianteira ({d.trackFront} mm) excede o limite regulamentar de{' '}
+              <strong>{dimBitolaDiant} mm</strong> em <strong>{excessoTrackFront} mm</strong>.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner de infração — Bitola Traseira ────────────────────── */}
+      {violaTrackRear && (
+        <div style={{
+          background: '#ff880015', border: '1.5px solid #ff8800',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#ff8800' }}>
+              Infração Regulamentar — Via Traseira
+            </div>
+            <div style={{ fontSize: 12, color: '#ffaa44', marginTop: 2 }}>
+              Bitola traseira ({d.trackRear} mm) excede o limite regulamentar de{' '}
+              <strong>{dimBitolaTrasei} mm</strong> em <strong>{excessoTrackRear} mm</strong>.
             </div>
           </div>
         </div>

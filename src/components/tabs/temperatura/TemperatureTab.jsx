@@ -93,6 +93,30 @@ const DEFAULT_TEMP_FORM = {
   precipitation: '',
 };
 
+function Badge({ type }) {
+  const COLORS = useColors();
+  if (type !== 'ecu') return null;
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, marginLeft: 5, padding: '1px 5px', borderRadius: 4,
+      background: `${COLORS.cyan}22`, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}44`,
+    }}>
+      📡 ECU
+    </span>
+  );
+}
+
+function Field({ label, badge, children }) {
+  const COLORS = useColors();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'flex', alignItems: 'center' }}>
+        {label}{badge && <Badge type={badge} />}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 export default function TemperatureTab({
   data, channels, lapsAnalysis = {},
   tempLog = [],
@@ -283,27 +307,6 @@ export default function TemperatureTab({
     background: `${bg}18`, color, border: `1px solid ${bg}44`, transition: 'background 0.15s',
   });
 
-  /** Badge "📡 ECU" exibido ao lado do label quando dado vem da telemetria */
-  const Badge = ({ type }) => {
-    if (type !== 'ecu') return null;
-    return (
-      <span style={{ fontSize: 10, fontWeight: 700, marginLeft: 5, padding: '1px 5px', borderRadius: 4,
-        background: `${COLORS.cyan}22`, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}44`,
-      }}>
-        📡 ECU
-      </span>
-    );
-  };
-
-  /** Campo do formulário com label e badge opcional */
-  const Field = ({ label, badge, children }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'flex', alignItems: 'center' }}>
-        {label}{badge && <Badge type={badge} />}
-      </label>
-      {children}
-    </div>
-  );
 
   return (
     <div style={{ padding: 24 }}>
@@ -354,6 +357,7 @@ export default function TemperatureTab({
           </Field>
           <Field
             label="Pressão Atm. (hPa)"
+           
             badge={channels?.baroPressure && ecuBaroPressure !== null ? 'ecu' : (baroFromAlt !== null && !ecuBaroPressure ? 'calc' : null)}
           >
             <input type="number" step="0.1" value={baroPressure} placeholder="101.3"

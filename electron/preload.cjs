@@ -70,3 +70,55 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logout: () =>
     ipcRenderer.invoke('license:logout'),
 });
+
+/* ── API de equipe (Team WebSocket) ──────────────────────────────────── */
+contextBridge.exposeInMainWorld('teamAPI', {
+
+  /** Retorna info do servidor: IP, porta, QR code data URL, dispositivos */
+  getServerInfo: () => ipcRenderer.invoke('team:getServerInfo'),
+
+  /** Define o nome da sessão exibido nos celulares */
+  setSessionName: (name) => ipcRenderer.invoke('team:setSessionName', name),
+
+  /** Envia mensagem de chat do desktop */
+  sendChatMessage: (msg) => ipcRenderer.invoke('team:sendChatMessage', msg),
+
+  /** Aprova uma medição recebida do celular */
+  approveMeasurement: (measurementId, deviceId) =>
+    ipcRenderer.invoke('team:approveMeasurement', { measurementId, deviceId }),
+
+  /** Descarta uma medição */
+  dismissMeasurement: (measurementId, deviceId) =>
+    ipcRenderer.invoke('team:dismissMeasurement', { measurementId, deviceId }),
+
+  /** Aprova um cronômetro recebido */
+  approveTimer: (timerId, deviceId) =>
+    ipcRenderer.invoke('team:approveTimer', { timerId, deviceId }),
+
+  /** Atribui perfis a um dispositivo */
+  assignDevice: (deviceId, profiles) =>
+    ipcRenderer.invoke('team:assignDevice', { deviceId, profileId: profiles }),
+
+  /** Envia alerta de emergência para todos os celulares */
+  sendEmergency: (message) =>
+    ipcRenderer.invoke('team:sendEmergency', { message }),
+
+  /** Inicia o servidor WebSocket manualmente */
+  startServer: () => ipcRenderer.invoke('team:startServer'),
+
+  /** Para o servidor WebSocket */
+  stopServer: () => ipcRenderer.invoke('team:stopServer'),
+
+  /**
+   * Registra callback para eventos de equipe em tempo real.
+   * Eventos: team:deviceJoined, team:deviceLeft, team:devicesUpdate,
+   *          measurement:pending, timer:pending, chat:message
+   */
+  onEvent: (callback) => {
+    ipcRenderer.removeAllListeners('team:event');
+    ipcRenderer.on('team:event', (_event, data) => callback(data));
+  },
+
+  /** Remove listener de eventos */
+  offEvent: () => ipcRenderer.removeAllListeners('team:event'),
+});

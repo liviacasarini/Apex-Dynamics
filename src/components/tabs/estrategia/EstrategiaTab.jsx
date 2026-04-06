@@ -154,7 +154,7 @@ export default function EstrategiaTab({ activeProfile }) {
 
   const importedCompounds = useMemo(() => {
     try {
-      return JSON.parse(localStorage.getItem(`rt_pneus_lib_${profileId}`) || '[]');
+      return JSON.parse(localStorage.getItem('rt_tyre_library') || '[]');
     } catch { return []; }
   }, [profileId]);
 

@@ -5,9 +5,9 @@
  * programático futuro. Descrições/observações ficam separadas (_obs / _desc).
  * Persistido em localStorage: rt_regulations
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/context/ThemeContext';
-import { REG_PESO_CHANGED_EVENT, useCarWeight } from '@/context/CarWeightContext';
+import { REG_PESO_CHANGED_EVENT, SETUP_REG_CHANGED_EVENT, useCarWeight } from '@/context/CarWeightContext';
 
 const STORAGE_KEY = 'rt_regulations';
 
@@ -478,7 +478,7 @@ function FieldCell({ def, value, onChange, COLORS, sectionColor }) {
 /* ── Componente Principal ─────────────────────────────────────────── */
 export default function RegulamentacoesTab() {
   const { colors: COLORS } = useTheme();
-  const { pesoCarro, violaRegulamento, excesso } = useCarWeight();
+  const { pesoCarro, violaRegulamento, excesso, pesoMinimo: ctxPesoMinimo } = useCarWeight();
 
   const [values, setValues] = useState(() => {
     try {
@@ -489,14 +489,71 @@ export default function RegulamentacoesTab() {
 
   const [saved, setSaved] = useState(false);
 
+  // Fase 8: quando SetupSheetTab altera motor/transmissão, atualiza campos de regulamentações (apenas se vazio)
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.detail) return;
+      const d = e.detail;
+      setValues(prev => {
+        const up = {};
+        if (d.engine_maxPowerCv   && !prev.motorPotenciaMax)  up.motorPotenciaMax  = d.engine_maxPowerCv;
+        if (d.engine_revLimit     && !prev.motorRpmMax)       up.motorRpmMax       = d.engine_revLimit;
+        if (d.engine_displacement && !prev.motorCilindrada)   up.motorCilindrada   = d.engine_displacement;
+        if (d.engine_cylinders    && !prev.motorCilindros)    up.motorCilindros    = d.engine_cylinders;
+        if (d.trans_numGears      && !prev.transmMarchasMax)  up.transmMarchasMax  = d.trans_numGears;
+        if (d.trans_gearboxType   && !prev.transmTipo)        up.transmTipo        = d.trans_gearboxType;
+        if (d.diff_type           && !prev.transmDiferencial) up.transmDiferencial = d.diff_type;
+        if (!Object.keys(up).length) return prev;
+        return { ...prev, ...up };
+      });
+    };
+    window.addEventListener(SETUP_REG_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(SETUP_REG_CHANGED_EVENT, handler);
+  }, []);
+
+  // Tópico 2: quando PesoTab ou CombustivelTab alteram pesoMinimo via contexto, reflete aqui
+  const prevCtxPesoMinimo = useRef(ctxPesoMinimo);
+  useEffect(() => {
+    if (ctxPesoMinimo === prevCtxPesoMinimo.current) return;
+    prevCtxPesoMinimo.current = ctxPesoMinimo;
+    if (ctxPesoMinimo !== '' && ctxPesoMinimo !== values.pesoMinimo) {
+      setValues(prev => ({ ...prev, pesoMinimo: ctxPesoMinimo }));
+    }
+  }, [ctxPesoMinimo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const t = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
-      // Notifica o contexto global quando pesoMinimo mudar
+      // Notifica o contexto global com todos os limites regulamentares relevantes
       window.dispatchEvent(new CustomEvent(REG_PESO_CHANGED_EVENT, {
-        detail: { pesoMinimo: values.pesoMinimo, combustivelMax: values.combustivelMax },
+        detail: {
+          // Peso & geometria (Topics 2, 4, 5, 6)
+          pesoMinimo:      values.pesoMinimo,
+          combustivelMax:  values.combustivelMax,
+          dimWheelbase:    values.dimWheelbase,
+          dimBitolaDiant:  values.dimBitolaDiant,
+          dimBitolaTrasei: values.dimBitolaTrasei,
+          // Fase 8 — Motor, Transmissão, Freios, Pneus (para SetupSheetTab)
+          motorPotenciaMax:  values.motorPotenciaMax,
+          motorRpmMax:       values.motorRpmMax,
+          motorCilindrada:   values.motorCilindrada,
+          motorCilindros:    values.motorCilindros,
+          motorBoostMax:     values.motorBoostMax,
+          transmMarchasMax:  values.transmMarchasMax,
+          transmTipo:        values.transmTipo,
+          transmDiferencial: values.transmDiferencial,
+          freioDiantDiamMax: values.freioDiantDiamMax,
+          freioTrasDiamMax:  values.freioTrasDiamMax,
+          // Fase 9 — Pneus (para PneusTab)
+          pneusLarguraDiant: values.pneusLarguraDiant,
+          pneusLarguraTras:  values.pneusLarguraTras,
+          pneusFornecedor:   values.pneusFornecedor,
+          pneusPressaoMin:   values.pneusPressaoMin,
+          // Combustível (para CombustivelTab)
+          combustivelTipo:   values.combustivelTipo,
+        },
       }));
     }, 800);
     return () => clearTimeout(t);

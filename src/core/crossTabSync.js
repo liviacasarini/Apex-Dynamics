@@ -13,7 +13,7 @@ const PILOTS_KEY       = 'rt_pilots';
 const TRACK_KEY        = 'rt_track_custom_';
 const ACTIVE_TRACK_KEY = 'rt_active_track_';
 const PNEUS_KEY        = 'rt_pneus_';
-const PNEUS_LIB        = 'rt_pneus_lib_';
+const PNEUS_LIB        = 'rt_tyre_library';
 const PNEUS_STINTS     = 'rt_pneus_stints_';
 const REG_KEY          = 'rt_regulations';
 const MECH_SPECS_KEY   = 'rt_part_specs_';
@@ -85,9 +85,8 @@ export function readActiveTrack(profileId) {
 // ─────────────────────────────────────────────────────
 // 5. PNEUS → sessão atual + biblioteca de compostos
 // ─────────────────────────────────────────────────────
-export function readPneusLib(profileId) {
-  if (!profileId) return [];
-  return safeJSON(`${PNEUS_LIB}${profileId}`, []);
+export function readPneusLib(_profileId) {
+  return safeJSON(PNEUS_LIB, []);
 }
 
 /** Retorna a sessão de pneus atual (pressões + temperaturas) */

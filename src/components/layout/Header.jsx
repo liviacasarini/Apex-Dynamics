@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useColors, useTheme } from '@/context/ThemeContext';
 
-export default function Header({ fileName, onNewSession, onLoad, onLogout, onProfilesToggle, profilesOpen }) {
+export default function Header({ fileName, onNewSession, onLoad, onLogout, onProfilesToggle, profilesOpen, teamPending = 0, teamUnread = 0, onTeamClick }) {
   const COLORS = useColors();
   const { isDark, toggleTheme } = useTheme();
   const fileRef = useRef();
@@ -42,6 +42,47 @@ export default function Header({ fileName, onNewSession, onLoad, onLogout, onPro
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Equipe / notificações de equipe */}
+        {onTeamClick && (
+          <button
+            onClick={onTeamClick}
+            title="Equipe — dispositivos conectados"
+            style={{
+              position: 'relative',
+              padding: '6px 14px',
+              borderRadius: 6,
+              fontSize: 12,
+              cursor: 'pointer',
+              background: (teamPending + teamUnread) > 0 ? `${COLORS.accent}18` : 'transparent',
+              border: `1px solid ${(teamPending + teamUnread) > 0 ? COLORS.accent : COLORS.border}`,
+              color: (teamPending + teamUnread) > 0 ? COLORS.accent : COLORS.textSecondary,
+              fontWeight: (teamPending + teamUnread) > 0 ? 700 : 400,
+              transition: 'all 0.2s',
+            }}
+          >
+            📡 Equipe
+            {(teamPending + teamUnread) > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: -6,
+                right: -6,
+                background: COLORS.accent,
+                color: '#fff',
+                borderRadius: '50%',
+                width: 18,
+                height: 18,
+                fontSize: 10,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+              }}>
+                {Math.min(teamPending + teamUnread, 99)}
+              </span>
+            )}
+          </button>
+        )}
         {/* Toggle dark/light */}
         <button
           onClick={toggleTheme}

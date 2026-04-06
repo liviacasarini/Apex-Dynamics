@@ -21,3 +21,4 @@ export { default as EstrategiaTab   } from './estrategia/EstrategiaTab';
 export { default as PerformanceTab  } from './performance/PerformanceTab';
 export { default as CalendarioTab   } from './calendario/CalendarioTab';
 export { default as LapTimeTab      } from './laptime/LapTimeTab';
+export { default as EquipeTab       } from './equipe/EquipeTab';

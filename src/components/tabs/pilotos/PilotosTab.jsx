@@ -4,6 +4,7 @@
  */
 import { useState, useCallback } from 'react';
 import { useColors } from '@/context/ThemeContext';
+import { PESO_PILOTO_SYNC } from '@/context/CarWeightContext';
 import { makeTheme } from '@/styles/theme';
 import { PrintFooter } from '@/components/common';
 
@@ -379,6 +380,15 @@ export default function PilotosTab({ profiles = [] }) {
     setPilots((prev) => {
       const next = prev.map((p) => p.id === id ? { ...p, [key]: value } : p);
       savePilots(next);
+      // Tópico 3: notifica contexto quando peso do piloto designado muda
+      if (key === 'weightEquipped') {
+        const pilot = next.find(p => p.id === id);
+        if (pilot?.assignedProfileId) {
+          window.dispatchEvent(new CustomEvent(PESO_PILOTO_SYNC, {
+            detail: { pilotId: id, profileId: pilot.assignedProfileId, value },
+          }));
+        }
+      }
       return next;
     });
   }, []);

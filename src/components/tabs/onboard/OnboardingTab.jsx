@@ -304,13 +304,15 @@ const VertBar = forwardRef(function VertBar({ label, color, COLORS }, ref) {
    Cada instância gerencia seu próprio vídeo, mapa, gauges e playback.
    ══════════════════════════════════════════════════════════════════════ */
 
-function OnboardingPanel({
+const OnboardingPanel = forwardRef(function OnboardingPanel({
   selfManaged = false,
   externalData, externalChannels, externalLapsAnalysis, externalBestLapNum,
   externalVideoConfig, setExternalVideoConfig, externalIsLoaded,
   onLoadFile,
   label, accentColor,
-}) {
+  cleanMode = false,
+  videoOnlyMode = false,
+}, ref) {
   const { colors: COLORS, isDark } = useTheme();
 
   /* ── Local state (selfManaged mode) ──────────────────────────────── */
@@ -736,6 +738,10 @@ function OnboardingPanel({
   }, []);
 
   const startAnim = useCallback(() => {
+    // Fallback: use video native duration when no telemetry is loaded
+    if (!lapDurationRef.current && videoRef.current?.duration) {
+      lapDurationRef.current = videoRef.current.duration;
+    }
     if (!lapDurationRef.current) return;
     lastWallRef.current = performance.now();
     lastVideoCorrectionRef.current = 0;
@@ -805,6 +811,28 @@ function OnboardingPanel({
       startAnim();
     }
   }, [isPlaying, stopAnim, startAnim, updateDOM, lapStart, sessionStart, effectiveBoundaries, selectedLap]);
+
+  /* ── seekRelative ────────────────────────────────────────────────── */
+  const seekRelative = useCallback((delta) => {
+    const cur  = playbackRef.current;
+    const dur  = lapDurationRef.current;
+    const next = Math.max(0, Math.min(cur + delta, dur || cur + delta));
+    playbackRef.current = next;
+    updateDOM(next);
+    seekVideo(next);
+    if (scrubberRef.current) scrubberRef.current.value = next;
+  }, [updateDOM, seekVideo]);
+
+  /* ── Imperative API ──────────────────────────────────────────────── */
+  useImperativeHandle(ref, () => ({
+    play:         () => { if (!isPlaying) startAnim(); },
+    pause:        () => { if (isPlaying)  stopAnim();  },
+    togglePlay:   () => togglePlay(),
+    seekRelative,
+    getPlayback:  () => playbackRef.current,
+    getDuration:  () => lapDurationRef.current,
+    isPlaying:    () => isPlaying,
+  }), [isPlaying, startAnim, stopAnim, togglePlay, seekRelative]); // eslint-disable-line
 
   /* Cleanup */
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
@@ -1147,7 +1175,7 @@ function OnboardingPanel({
       )}
 
       {/* ── Header: label + lap selector + map color ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      {!cleanMode && <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <div style={{
           fontSize: 12, color: accentColor, fontWeight: 800, textTransform: 'uppercase',
           letterSpacing: 1.5, padding: '4px 10px', background: accentColor + '15',
@@ -1219,7 +1247,7 @@ function OnboardingPanel({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* ── Vídeo Player ── */}
       <div style={{
@@ -1255,7 +1283,16 @@ function OnboardingPanel({
           <>
             <video ref={videoRef} src={videoConfig.videoUrl}
               style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 12 }}
-              muted playsInline preload="auto" />
+              muted playsInline preload="auto"
+              onLoadedMetadata={() => {
+                if (!lapDurationRef.current && videoRef.current?.duration) {
+                  lapDurationRef.current = videoRef.current.duration;
+                  if (scrubberRef.current) {
+                    scrubberRef.current.max = videoRef.current.duration;
+                    scrubberRef.current.step = videoRef.current.duration / 10000;
+                  }
+                }
+              }} />
 
             {/* Bottom controls */}
             <div style={{
@@ -1364,7 +1401,7 @@ function OnboardingPanel({
       </div>
 
       {/* ── Mapa + Gauges ── */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+      {!cleanMode && !videoOnlyMode && <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
 
         {/* Mapa */}
         <div style={{ flex: '1 1 55%', minWidth: 0, background: COLORS.bg, borderRadius: 12, overflow: 'hidden', border: `1px solid ${COLORS.border}`, position: 'relative' }}>
@@ -1431,9 +1468,21 @@ function OnboardingPanel({
             <VertBar ref={brkBarRef} label="Freio"  color="#ff2222" COLORS={COLORS} />
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── Player ── */}
+      {cleanMode ? (
+        /* Modo limpo: só play/pause centrado */
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, padding: '6px 0' }}>
+          <button onClick={togglePlay} style={{
+            background: isPlaying ? '#cc2222' : accentColor, border: 'none', borderRadius: 10,
+            color: '#fff', fontSize: 22, padding: '8px 28px', cursor: 'pointer', fontWeight: 700,
+            boxShadow: `0 0 14px ${isPlaying ? '#cc222244' : accentColor + '44'}`,
+          }}>
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+        </div>
+      ) : (
       <div style={{ background: COLORS.bgCard, borderRadius: 12, border: `1px solid ${COLORS.border}`, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
 
         {/* Tempo */}
@@ -1474,8 +1523,8 @@ function OnboardingPanel({
               </React.Fragment>
             );
           })}
-          <input ref={scrubberRef} type="range" min={0} max={sessionDuration || 1}
-            step={sessionDuration > 0 ? sessionDuration / 10000 : 0.001} defaultValue={0}
+          <input ref={scrubberRef} type="range" min={0} max={sessionDuration || videoRef.current?.duration || 1}
+            step={sessionDuration > 0 ? sessionDuration / 10000 : (videoRef.current?.duration ? videoRef.current.duration / 10000 : 0.001)} defaultValue={0}
             onChange={handleScrub} onMouseDown={() => { if (isPlaying) stopAnim(); }}
             style={{ width: '100%', accentColor, cursor: 'pointer', margin: 0, position: 'relative', zIndex: 2 }} />
         </div>
@@ -1492,6 +1541,11 @@ function OnboardingPanel({
             seekVideo(jumpTo);
           }} style={{ background: COLORS.bgCardHover, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textSecondary, fontSize: 14, padding: '5px 10px', cursor: 'pointer' }} title="Reiniciar">⏮</button>
 
+          <button onClick={() => seekRelative(-1)} title="−1s"
+            style={{ background: COLORS.bgCardHover, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textSecondary, fontSize: 11, padding: '5px 8px', cursor: 'pointer', fontWeight: 600 }}>
+            ◀ 1s
+          </button>
+
           <button onClick={togglePlay} style={{
             background: isPlaying ? '#cc2222' : accentColor, border: 'none', borderRadius: 8,
             color: '#fff', fontSize: 16, padding: '6px 16px', cursor: 'pointer', fontWeight: 700,
@@ -1499,6 +1553,11 @@ function OnboardingPanel({
             minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {isPlaying ? '⏸' : '▶'}
+          </button>
+
+          <button onClick={() => seekRelative(1)} title="+1s"
+            style={{ background: COLORS.bgCardHover, border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textSecondary, fontSize: 11, padding: '5px 8px', cursor: 'pointer', fontWeight: 600 }}>
+            1s ▶
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
@@ -1529,36 +1588,230 @@ function OnboardingPanel({
           )}
         </div>
       </div>
+      )}
     </div>
   );
-}
+});
 
 /* ══════════════════════════════════════════════════════════════════════
    ONBOARDING TAB — renderiza dois painéis independentes lado a lado
    ══════════════════════════════════════════════════════════════════════ */
 
+function globalBtnStyle(COLORS) {
+  return {
+    background: 'transparent',
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 6,
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    padding: '4px 9px',
+    cursor: 'pointer',
+    fontWeight: 600,
+  };
+}
+
 export default function OnboardingTab({ data, channels, lapsAnalysis, bestLapNum, videoConfig, setVideoConfig, isLoaded, profiles, activeProfile, onLoadPrimaryFile }) {
+  const [cleanMode, setCleanMode]         = useState(false);
+  const [videoOnlyMode, setVideoOnlyMode] = useState(false);
+  const [globalPlaying, setGlobalPlaying] = useState(false);
+  const { colors: COLORS } = useTheme();
+
+  const panel1Ref      = useRef(null);
+  const panel2Ref      = useRef(null);
+  // Rastreia qual painel foi clicado por último (1, 2 ou null = global)
+  const activePanelRef = useRef(null);
+
+  /* ── Controles globais ────────────────────────────────────────────── */
+  const globalPlay = useCallback(() => {
+    panel1Ref.current?.play();
+    panel2Ref.current?.play();
+    setGlobalPlaying(true);
+  }, []);
+
+  const globalPause = useCallback(() => {
+    panel1Ref.current?.pause();
+    panel2Ref.current?.pause();
+    setGlobalPlaying(false);
+  }, []);
+
+  const globalToggle = useCallback(() => {
+    if (globalPlaying) globalPause(); else globalPlay();
+  }, [globalPlaying, globalPlay, globalPause]);
+
+  const globalSeek = useCallback((delta) => {
+    panel1Ref.current?.seekRelative(delta);
+    panel2Ref.current?.seekRelative(delta);
+  }, []);
+
+  /* ── Teclado ─────────────────────────────────────────────────────── */
+  useEffect(() => {
+    function onKey(e) {
+      const el  = document.activeElement;
+      const tag = el?.tagName;
+      // Deixa o browser tratar inputs e selects normalmente
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      // Se foco está em botão de painel individual, deixa o click nativo tratar
+      if (tag === 'BUTTON' && !el?.closest('[data-global-player]')) return;
+
+      const delta = e.shiftKey ? 15 : 5;
+      // Resolve qual painel / comportamento usar com base no último clique
+      const ap = activePanelRef.current;
+      const targetRef = ap === 1 ? panel1Ref : ap === 2 ? panel2Ref : null;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (targetRef) targetRef.current?.togglePlay();
+        else           globalToggle();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        if (targetRef) targetRef.current?.seekRelative(delta);
+        else           globalSeek(delta);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        if (targetRef) targetRef.current?.seekRelative(-delta);
+        else           globalSeek(-delta);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [globalToggle, globalSeek]);
+
   return (
-    <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <OnboardingPanel
-          externalData={data}
-          externalChannels={channels}
-          externalLapsAnalysis={lapsAnalysis}
-          externalBestLapNum={bestLapNum}
-          externalVideoConfig={videoConfig}
-          setExternalVideoConfig={setVideoConfig}
-          externalIsLoaded={isLoaded}
-          onLoadFile={onLoadPrimaryFile}
-          label="Onboarding 1"
-          accentColor="#4466ff"
-        />
-        <OnboardingPanel
-          selfManaged
-          label="Onboarding 2"
-          accentColor="#ffaa00"
-        />
+    <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* ── Barra superior: apenas toggles de visualização ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => { setVideoOnlyMode((v) => !v); if (cleanMode) setCleanMode(false); }}
+          title={videoOnlyMode ? 'Mostrar telemetria e gauges' : 'Ocultar telemetria e gauges — somente vídeo'}
+          style={{
+            padding: '6px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600,
+            background: videoOnlyMode ? '#06d6a022' : 'transparent',
+            border: `1px solid ${videoOnlyMode ? '#06d6a0' : COLORS.border}`,
+            color: videoOnlyMode ? '#06d6a0' : COLORS.textSecondary,
+            transition: 'all 0.2s',
+          }}
+        >
+          {videoOnlyMode ? '📊 Mostrar telemetria' : '🎬 Somente Onboarding'}
+        </button>
+
+        <button
+          onClick={() => { setCleanMode((v) => !v); if (videoOnlyMode) setVideoOnlyMode(false); }}
+          title={cleanMode ? 'Mostrar informações técnicas' : 'Ocultar tudo — somente vídeo com play/pause'}
+          style={{
+            padding: '6px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontWeight: 600,
+            background: cleanMode ? '#4466ff22' : 'transparent',
+            border: `1px solid ${cleanMode ? '#4466ff' : COLORS.border}`,
+            color: cleanMode ? '#4466ff' : COLORS.textSecondary,
+            transition: 'all 0.2s',
+          }}
+        >
+          {cleanMode ? '📊 Mostrar técnicos' : '🖥️ Modo Apresentação'}
+        </button>
       </div>
+
+      {/* ── Painéis ── */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        {/* Wrapper captura clique para marcar painel 1 como ativo */}
+        <div style={{ flex: 1, minWidth: 0 }} onMouseDown={() => { activePanelRef.current = 1; }}>
+          <OnboardingPanel
+            ref={panel1Ref}
+            externalData={data}
+            externalChannels={channels}
+            externalLapsAnalysis={lapsAnalysis}
+            externalBestLapNum={bestLapNum}
+            externalVideoConfig={videoConfig}
+            setExternalVideoConfig={setVideoConfig}
+            externalIsLoaded={isLoaded}
+            onLoadFile={onLoadPrimaryFile}
+            label="Onboarding 1"
+            accentColor="#4466ff"
+            cleanMode={cleanMode}
+            videoOnlyMode={videoOnlyMode}
+          />
+        </div>
+        {/* Wrapper captura clique para marcar painel 2 como ativo */}
+        <div style={{ flex: 1, minWidth: 0 }} onMouseDown={() => { activePanelRef.current = 2; }}>
+          <OnboardingPanel
+            ref={panel2Ref}
+            selfManaged
+            label="Onboarding 2"
+            accentColor="#ffaa00"
+            cleanMode={cleanMode}
+            videoOnlyMode={videoOnlyMode}
+          />
+        </div>
+      </div>
+
+      {/* ── Player Universal (abaixo dos painéis) ── */}
+      <div
+        data-global-player="true"
+        onMouseDown={() => { activePanelRef.current = null; }}
+        style={{
+          background: COLORS.bgCard,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 16,
+          padding: '18px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          alignItems: 'center',
+        }}
+      >
+        {/* Título */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', justifyContent: 'center' }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: 2,
+            textTransform: 'uppercase', color: COLORS.textMuted,
+          }}>
+            🎮 Controle Universal — ambas as câmeras
+          </span>
+          <span style={{ fontSize: 10, color: COLORS.textMuted, opacity: 0.6 }}>
+            (← → Espaço)
+          </span>
+        </div>
+
+        {/* Botões principais */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Retroceder */}
+          <button onClick={() => globalSeek(-15)} title="−15s (Shift+←)"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 16px' }}>
+            ◀◀ 15s
+          </button>
+          <button onClick={() => globalSeek(-5)} title="−5s (←)"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 14px' }}>
+            ◀ 5s
+          </button>
+
+          {/* Play / Pause central grande */}
+          <button
+            onClick={globalToggle}
+            style={{
+              background: globalPlaying ? '#cc2222' : '#4466ff',
+              border: 'none', borderRadius: 50,
+              color: '#fff', fontSize: 24,
+              width: 62, height: 62,
+              cursor: 'pointer', fontWeight: 700,
+              boxShadow: `0 0 18px ${globalPlaying ? '#cc222266' : '#4466ff66'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {globalPlaying ? '⏸' : '▶'}
+          </button>
+
+          {/* Avançar */}
+          <button onClick={() => globalSeek(5)} title="+5s (→)"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 14px' }}>
+            5s ▶
+          </button>
+          <button onClick={() => globalSeek(15)} title="+15s (Shift+→)"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 16px' }}>
+            15s ▶▶
+          </button>
+        </div>
+      </div>
+
       <PrintFooter />
     </div>
   );

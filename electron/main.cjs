@@ -15,9 +15,13 @@
 
 const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const path   = require('path');
+const http   = require('http');
 const https  = require('https');
 const crypto = require('crypto');
+const os     = require('os');
 const { getHWID } = require('./hwid.cjs');
+const { WebSocketServer } = require('ws');
+const QRCode = require('qrcode');
 
 const APEX_SERVER = 'apexserver-production.up.railway.app';
 const APEX_PORT   = 443;
@@ -29,6 +33,287 @@ let sessionHwid       = null;
 let sseRequest        = null;  // conexão SSE ativa
 let sseReconnectTimer = null;  // timer de reconexão após queda
 let sseStopped        = false; // true quando parado intencionalmente (ban / logout)
+
+/* ── Estado do servidor de equipe (WebSocket local) ──────────────── */
+const TEAM_WS_PORT  = 8765;
+const TEAM_HTTP_PORT = 8766;
+let   teamWss       = null;   // WebSocketServer instance
+let   teamHttpServer = null;  // HTTP server for background polling
+const teamDevices   = new Map(); // deviceId → { ws, info }
+const pendingQueue  = new Map(); // deviceId → [msg, msg, ...] — mensagens para dispositivos offline
+const pushTokens    = new Map(); // deviceId → ExpoPushToken string
+let   sessionName   = 'Sessão ApexDynamics';
+
+/* ── Expo Push API — envia notificação real via Firebase/APNs ──── */
+function sendExpoPush(pushToken, title, body, data = {}, channelId = 'team', priority = 'high') {
+  if (!pushToken) return;
+  const payload = JSON.stringify({
+    to: pushToken,
+    title,
+    body,
+    sound: 'default',
+    priority,
+    channelId,
+    data,
+  });
+  console.log('[ExpoPush] Sending to', pushToken.substring(0, 30) + '...', title);
+  const req = https.request({
+    hostname: 'exp.host',
+    port: 443,
+    path: '/--/api/v2/push/send',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    },
+  }, (res) => {
+    let body = '';
+    res.on('data', chunk => body += chunk);
+    res.on('end', () => console.log('[ExpoPush] Response:', res.statusCode, body.substring(0, 200)));
+  });
+  req.on('error', e => console.error('[ExpoPush] Error:', e.message));
+  req.write(payload);
+  req.end();
+}
+
+/** Envia push para todos os devices offline (WS não aberto) */
+function pushToOfflineDevices(title, body, data = {}, channelId = 'team', priority = 'high') {
+  // Devices que estão no pushTokens mas não têm WS aberto
+  for (const [deviceId, token] of pushTokens.entries()) {
+    const dev = teamDevices.get(deviceId);
+    if (!dev || dev.ws.readyState !== 1) {
+      sendExpoPush(token, title, body, data, channelId, priority);
+    }
+  }
+}
+
+/** Retorna o IP local da máquina na rede Wi-Fi/LAN */
+function getLocalIP() {
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+/** Envia JSON para um WebSocket, ignora se fechado */
+function wsSend(ws, obj) {
+  try {
+    if (ws.readyState === 1) { ws.send(JSON.stringify(obj)); return true; }
+    return false;
+  } catch { return false; }
+}
+
+/** Broadcast para todos os dispositivos conectados + desktop renderer.
+ *  Mensagens de chat e emergência também são enfileiradas para devices offline. */
+function teamBroadcast(msg, excludeWs = null) {
+  const str = JSON.stringify(msg);
+  for (const [deviceId, { ws }] of teamDevices.entries()) {
+    try {
+      if (ws !== excludeWs && ws.readyState === 1) {
+        ws.send(str);
+      } else if (ws !== excludeWs) {
+        // Device está conectado mas WS não está aberto — enfileira
+        queueForDevice(deviceId, msg);
+      }
+    } catch {
+      queueForDevice(deviceId, msg);
+    }
+  }
+  // Enfileira para devices que já se desconectaram (removidos do teamDevices)
+  for (const [deviceId] of pendingQueue.entries()) {
+    if (!teamDevices.has(deviceId)) {
+      queueForDevice(deviceId, msg);
+    }
+  }
+  // Envia também para o renderer do desktop
+  mainWindow?.webContents.send('team:event', msg);
+}
+
+/** Inicia o servidor WebSocket da equipe */
+function startTeamServer() {
+  if (teamWss) return;
+  teamWss = new WebSocketServer({ port: TEAM_WS_PORT });
+
+  teamWss.on('connection', (ws) => {
+    let deviceId = null;
+
+    ws.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+
+      switch (msg.type) {
+
+        // Dispositivo se identifica ao conectar
+        case 'device:identify': {
+          deviceId = msg.deviceId || crypto.randomUUID();
+          teamDevices.set(deviceId, { ws, info: {
+            deviceId,
+            name:     msg.deviceName || 'Desconhecido',
+            role:     msg.deviceRole || 'auxiliar',
+            platform: msg.platform   || 'mobile',
+            connectedAt: new Date().toISOString(),
+            battery:  msg.battery    ?? null,
+          }});
+          // Armazena push token para notificações quando offline
+          if (msg.pushToken) {
+            pushTokens.set(deviceId, msg.pushToken);
+            console.log('[Push] Token registrado para', deviceId, ':', msg.pushToken.substring(0, 30) + '...');
+          }
+          // Confirma conexão
+          wsSend(ws, { type: 'device:welcome', deviceId, sessionName,
+            devicesOnline: [...teamDevices.values()].map(d => d.info) });
+          // Notifica todos (inclusive desktop)
+          teamBroadcast({ type: 'team:deviceJoined',
+            device: teamDevices.get(deviceId).info }, ws);
+          // Atualiza desktop com lista
+          mainWindow?.webContents.send('team:event', {
+            type: 'team:devicesUpdate',
+            devices: [...teamDevices.values()].map(d => d.info),
+          });
+          break;
+        }
+
+        // Heartbeat / ping
+        case 'device:ping': {
+          if (deviceId && teamDevices.has(deviceId)) {
+            teamDevices.get(deviceId).info.battery = msg.battery ?? null;
+            teamDevices.get(deviceId).info.lastSeen = new Date().toISOString();
+          }
+          wsSend(ws, { type: 'device:pong' });
+          break;
+        }
+
+        // Medição enviada pelo celular — NÃO aplica, manda notificação pro desktop
+        case 'measurement:submit': {
+          const measurementId = msg.id || crypto.randomUUID();
+          // Confirma recebimento para o celular
+          wsSend(ws, { type: 'measurement:received', measurementId, status: 'pending' });
+          // Envia ao desktop para aprovação
+          mainWindow?.webContents.send('team:event', {
+            type:    'measurement:pending',
+            measurement: { ...msg, id: measurementId },
+          });
+          break;
+        }
+
+        // Cronômetro enviado
+        case 'timer:submit': {
+          const timerId = msg.id || crypto.randomUUID();
+          wsSend(ws, { type: 'timer:received', timerId });
+          mainWindow?.webContents.send('team:event', {
+            type:  'timer:pending',
+            timer: { ...msg, id: timerId },
+          });
+          break;
+        }
+
+        // Mensagem de chat
+        case 'chat:message': {
+          // Broadcast para todos (outros celulares + desktop)
+          teamBroadcast({ ...msg, id: msg.id || crypto.randomUUID() }, ws);
+          break;
+        }
+
+        default: break;
+      }
+    });
+
+    ws.on('close', () => {
+      if (!deviceId) return;
+      const info = teamDevices.get(deviceId)?.info;
+      teamDevices.delete(deviceId);
+      // Garante que o deviceId continua na pendingQueue para receber mensagens futuras
+      if (!pendingQueue.has(deviceId)) pendingQueue.set(deviceId, []);
+      teamBroadcast({ type: 'team:deviceLeft', device: info });
+      mainWindow?.webContents.send('team:event', {
+        type: 'team:devicesUpdate',
+        devices: [...teamDevices.values()].map(d => d.info),
+      });
+    });
+
+    ws.on('error', () => {});
+  });
+
+  teamWss.on('error', (err) => {
+    console.error('[TeamWS] erro:', err.message);
+  });
+}
+
+/** Para o servidor WebSocket da equipe */
+function stopTeamServer() {
+  if (!teamWss) return;
+  for (const { ws } of teamDevices.values()) { try { ws.terminate(); } catch {} }
+  teamDevices.clear();
+  teamWss.close();
+  teamWss = null;
+  if (teamHttpServer) { teamHttpServer.close(); teamHttpServer = null; }
+}
+
+/** Enfileira mensagem para um dispositivo offline (máx 50 por device) */
+function queueForDevice(deviceId, msg) {
+  if (!pendingQueue.has(deviceId)) pendingQueue.set(deviceId, []);
+  const q = pendingQueue.get(deviceId);
+  q.push({ ...msg, _queuedAt: Date.now() });
+  if (q.length > 50) q.shift(); // mantém últimas 50
+}
+
+/** Enfileira msg para TODOS os dispositivos cujo WS não está aberto */
+function queueForOfflineDevices(msg) {
+  // Todos deviceIds que já se conectaram alguma vez
+  const knownIds = new Set([...pendingQueue.keys(), ...teamDevices.keys()]);
+  for (const id of knownIds) {
+    const dev = teamDevices.get(id);
+    if (!dev || dev.ws.readyState !== 1) {
+      queueForDevice(id, msg);
+    }
+  }
+}
+
+/** Inicia servidor HTTP para polling de background (porta 8766) */
+function startTeamHttpServer() {
+  if (teamHttpServer) return;
+  teamHttpServer = http.createServer((req, res) => {
+    // CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+
+    const url = new URL(req.url, `http://localhost:${TEAM_HTTP_PORT}`);
+
+    // GET /pending?deviceId=xxx — retorna e limpa mensagens pendentes
+    if (req.method === 'GET' && url.pathname === '/pending') {
+      const did = url.searchParams.get('deviceId');
+      if (!did) { res.writeHead(400); res.end('{"error":"deviceId required"}'); return; }
+      const msgs = pendingQueue.get(did) || [];
+      pendingQueue.set(did, []); // limpa após entregar
+      console.log('[HTTP] /pending for', did, '→', msgs.length, 'messages');
+      res.writeHead(200);
+      res.end(JSON.stringify({ messages: msgs }));
+      return;
+    }
+
+    // GET /ping — health check
+    if (req.method === 'GET' && url.pathname === '/ping') {
+      res.writeHead(200);
+      res.end('{"ok":true}');
+      return;
+    }
+
+    res.writeHead(404);
+    res.end('{"error":"not found"}');
+  });
+
+  teamHttpServer.on('error', (err) => {
+    console.error('[TeamHTTP] erro:', err.message);
+  });
+
+  teamHttpServer.listen(TEAM_HTTP_PORT, () => {
+    console.log('[TeamHTTP] Servidor HTTP de polling em porta', TEAM_HTTP_PORT);
+  });
+}
 
 /** Chave pública RSA embutida — usada para verificar certificados RS256 localmente. */
 const RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -447,14 +732,138 @@ ipcMain.handle('license:validate', (_event, { apexHash, hwid }) => {
     });
 });
 
+/* ── IPC: Equipe / Team WebSocket ──────────────────────────────────── */
+
+/** Retorna info do servidor (IP, porta, QR code, dispositivos conectados) */
+ipcMain.handle('team:getServerInfo', async () => {
+  const ip  = getLocalIP();
+  const url = `ws://${ip}:${TEAM_WS_PORT}`;
+  const qrData = JSON.stringify({ wsUrl: url, sessionName });
+  let qrDataUrl = null;
+  try { qrDataUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 }); } catch {}
+  return {
+    ip, port: TEAM_WS_PORT, url, sessionName, qrDataUrl,
+    devices: [...teamDevices.values()].map(d => d.info),
+    running: !!teamWss,
+  };
+});
+
+/** Atualiza nome da sessão */
+ipcMain.handle('team:setSessionName', (_e, name) => {
+  sessionName = name || 'Sessão ApexDynamics';
+  return { ok: true };
+});
+
+/** Desktop envia mensagem de chat */
+ipcMain.handle('team:sendChatMessage', (_e, msg) => {
+  const full = { type: 'chat:message', id: crypto.randomUUID(),
+    from: { deviceId: 'desktop', name: msg.senderName || 'Desktop', role: 'engenheiro', platform: 'desktop' },
+    timestamp: new Date().toISOString(), content: { text: msg.text } };
+  console.log('[TeamChat] broadcasting to', teamDevices.size, 'devices:', full.content.text);
+  teamBroadcast(full);
+  // Push notification para devices offline
+  const sender = msg.senderName || 'Desktop';
+  pushToOfflineDevices(`💬 ${sender}`, msg.text || 'Nova mensagem', { type: 'chat' });
+  return { ok: true };
+});
+
+/** Desktop aprova uma medição → notifica celular + retorna dados para o renderer */
+ipcMain.handle('team:approveMeasurement', (_e, { measurementId, deviceId: targetDeviceId }) => {
+  const dev = teamDevices.get(targetDeviceId);
+  const msg = { type: 'measurement:approved', measurementId, approvedAt: new Date().toISOString() };
+  const sentOk = dev ? wsSend(dev.ws, msg) : false;
+  if (!sentOk) {
+    queueForDevice(targetDeviceId, msg);
+    const token = pushTokens.get(targetDeviceId);
+    if (token) sendExpoPush(token, '✅ Medição Aprovada', 'Sua medição foi aprovada pelo engenheiro.');
+  }
+  return { ok: true };
+});
+
+/** Desktop ignora uma medição → notifica celular */
+ipcMain.handle('team:dismissMeasurement', (_e, { measurementId, deviceId: targetDeviceId }) => {
+  const dev = teamDevices.get(targetDeviceId);
+  const msg = { type: 'measurement:dismissed', measurementId };
+  const sentOk = dev ? wsSend(dev.ws, msg) : false;
+  if (!sentOk) {
+    queueForDevice(targetDeviceId, msg);
+    const token = pushTokens.get(targetDeviceId);
+    if (token) sendExpoPush(token, '❌ Medição Dispensada', 'Sua medição foi dispensada.');
+  }
+  return { ok: true };
+});
+
+/** Desktop aprova um cronômetro → notifica celular */
+ipcMain.handle('team:approveTimer', (_e, { timerId, deviceId: targetDeviceId }) => {
+  const dev = teamDevices.get(targetDeviceId);
+  if (dev) wsSend(dev.ws, { type: 'timer:approved', timerId });
+  return { ok: true };
+});
+
+/** Desktop atribui perfis a um dispositivo → notifica celular */
+ipcMain.handle('team:assignDevice', (_e, { deviceId: targetDeviceId, profileId, profileName }) => {
+  const dev = teamDevices.get(targetDeviceId);
+  if (dev) {
+    // profileId pode ser: null (remover), array de {id,name}, ou string legada
+    wsSend(dev.ws, {
+      type: 'device:profileAssigned',
+      profiles: profileId, // null ou [{id, name}, ...]
+    });
+  }
+  return { ok: true };
+});
+
+/** Desktop envia alerta de emergência para TODOS os celulares */
+ipcMain.handle('team:sendEmergency', (_e, { message }) => {
+  console.log('[Emergency] Sending to', teamDevices.size, 'devices:', message);
+  const alertMsg = message || 'EMERGÊNCIA';
+  const alert = {
+    type: 'emergency:alert',
+    id: crypto.randomUUID(),
+    message: alertMsg,
+    timestamp: new Date().toISOString(),
+  };
+  // Envia via WebSocket para dispositivos conectados
+  let sent = 0;
+  for (const [deviceId, { ws }] of teamDevices.entries()) {
+    const ok = wsSend(ws, alert);
+    console.log('[Emergency] →', deviceId, 'ws.readyState:', ws.readyState, ok ? 'OK' : 'FAIL');
+    if (!ok) queueForDevice(deviceId, alert);
+    sent++;
+  }
+  // Enfileira para devices desconectados
+  for (const [deviceId] of pendingQueue.entries()) {
+    if (!teamDevices.has(deviceId)) {
+      queueForDevice(deviceId, alert);
+    }
+  }
+  // PUSH NOTIFICATION para TODOS os devices (inclusive os com WS aberto, para garantir)
+  for (const [deviceId, token] of pushTokens.entries()) {
+    sendExpoPush(token, '🚨 EMERGÊNCIA', alertMsg,
+      { type: 'emergency', id: alert.id },
+      'emergency', 'high');
+  }
+  console.log('[Emergency] WS sent:', sent, '| Push sent to:', pushTokens.size, 'tokens');
+  return { ok: true, sent };
+});
+
+/** Inicia/para servidor manualmente (o app inicia automático, mas pode ser parado pelo usuário) */
+ipcMain.handle('team:startServer', () => { startTeamServer(); return { ok: true }; });
+ipcMain.handle('team:stopServer',  () => { stopTeamServer();  return { ok: true }; });
+
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  startTeamServer();
+  startTeamHttpServer();
+});
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
 app.on('window-all-closed', () => {
+  stopTeamServer();
   if (process.platform !== 'darwin') app.quit();
 });

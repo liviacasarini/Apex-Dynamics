@@ -37,13 +37,13 @@ const EMPTY_SCENARIO = {
   name: '',
   // consumo por volta
   trackLength:        '',   // km
-  consumptionRate:    '',   // L/100 km
+  consumptionRate:    '',   // L/volta
   fuelUsed:           '',   // L empírico
   lapsCompleted:      '',   // voltas (empírico)
   // corrida
   raceLaps:           '',   // voltas totais
   manualPerLap:       '',   // override manual L/volta
-  safetyMargin:       '',   // % extra
+  safetyMargin:       '',   // L extra
   // combustível
   fuelType:           'gasolina',
   tankCapacity:       '',   // capacidade do tanque (L)
@@ -70,10 +70,8 @@ function calcPerLap(s) {
   const used  = parseFloat(s.fuelUsed);
   const laps  = parseFloat(s.lapsCompleted);
   if (!isNaN(used) && !isNaN(laps) && laps > 0) return used / laps;
-  const track = parseFloat(s.trackLength);
   const rate  = parseFloat(s.consumptionRate);
-  if (!isNaN(track) && !isNaN(rate) && track > 0 && rate > 0)
-    return (rate * track) / 100;
+  if (!isNaN(rate) && rate > 0) return rate;
   return null;
 }
 
@@ -82,7 +80,7 @@ function calcTotalFuel(s) {
   const raceLaps = parseFloat(s.raceLaps);
   const margin   = parseFloat(s.safetyMargin) || 0;
   if (perLap === null || isNaN(raceLaps) || raceLaps <= 0) return null;
-  return perLap * raceLaps * (1 + margin / 100);
+  return perLap * raceLaps + margin;
 }
 
 function calcWeights(s) {
@@ -122,8 +120,8 @@ function calcCGShift(s, totalFuel) {
   const margin   = parseFloat(s.safetyMargin) || 0;
   const baseW    = carW + driverW;
   const fwStart  = totalFuel * density;
-  // ao fim da corrida sobra apenas o combustível da margem de segurança
-  const fuelEnd  = totalFuel * (margin / (100 + margin));
+  // ao fim da corrida sobra apenas o combustível da margem de segurança (em L)
+  const fuelEnd  = margin;
   const fwEnd    = fuelEnd * density;
   const cgStart  = (baseW * cgX + fwStart * tankX) / (baseW + fwStart);
   const cgEnd    = (baseW * cgX + fwEnd   * tankX) / (baseW + fwEnd);
@@ -219,6 +217,8 @@ export default function CombustivelTab({
     pesoCarro: ctxPesoCarro, setPesoCarro,
     pesoPiloto: ctxPesoPiloto, setPesoPiloto,
     wheelbase: ctxWheelbase, setWheelbase,
+    cgLong: ctxCgLong, setCgLong,
+    tankPos: ctxTankPos, setTankPos,
     violaRegulamento, excesso, pesoMinimo,
     combustivelMax,
     assignedPilots, selectedPilotId, selectPilot,
@@ -298,6 +298,8 @@ export default function CombustivelTab({
         if (ctxPesoCarro)  overrides.carWeight    = ctxPesoCarro;
         if (ctxPesoPiloto) overrides.driverWeight = ctxPesoPiloto;
         if (ctxWheelbase)  overrides.wheelbaseLen = ctxWheelbase;
+        if (ctxCgLong)     overrides.cgCarX       = ctxCgLong;
+        if (ctxTankPos)    overrides.tankPosX      = ctxTankPos;
         const scenariosToLoad = Object.keys(overrides).length
           ? saved.map(s => ({ ...s, ...overrides }))
           : saved;
@@ -307,6 +309,8 @@ export default function CombustivelTab({
         if (!ctxPesoCarro  && saved[0].carWeight)    setPesoCarro(saved[0].carWeight);
         if (!ctxPesoPiloto && saved[0].driverWeight) setPesoPiloto(saved[0].driverWeight);
         if (!ctxWheelbase  && saved[0].wheelbaseLen) setWheelbase(saved[0].wheelbaseLen);
+        if (!ctxCgLong     && saved[0].cgCarX)       setCgLong(saved[0].cgCarX);
+        if (!ctxTankPos    && saved[0].tankPosX)     setTankPos(saved[0].tankPosX);
         if (Object.keys(overrides).length) {
           localStorage.setItem(storageKey, JSON.stringify(scenariosToLoad));
         }
@@ -363,6 +367,30 @@ export default function CombustivelTab({
     });
   }, [ctxWheelbase, storageKey]);
 
+  // Tópico 7: CG longitudinal (PesoTab → CombustivelTab)
+  useEffect(() => {
+    if (!ctxCgLong) return;
+    setScenarios(prev => {
+      if (prev.every(s => s.cgCarX === ctxCgLong)) return prev;
+      syncingFromCtx.current = true;
+      const next = prev.map(s => ({ ...s, cgCarX: ctxCgLong }));
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  }, [ctxCgLong, storageKey]);
+
+  // Tópico 11: Posição do tanque (PesoTab → CombustivelTab)
+  useEffect(() => {
+    if (!ctxTankPos) return;
+    setScenarios(prev => {
+      if (prev.every(s => s.tankPosX === ctxTankPos)) return prev;
+      syncingFromCtx.current = true;
+      const next = prev.map(s => ({ ...s, tankPosX: ctxTankPos }));
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  }, [ctxTankPos, storageKey]);
+
   /* ── sync: pista ativa → trackLength ── */
   const applyTrackLength = useCallback((lengthKm) => {
     if (!lengthKm) return;
@@ -400,6 +428,8 @@ export default function CombustivelTab({
       driverWeight: active.driverWeight || xt.pilotWeight || xt.pesoPiloto,
       minWeight:    active.minWeight    || xt.pesoHomologado,
       wheelbaseLen: active.wheelbaseLen || xt.wheelbase,
+      cgCarX:       active.cgCarX       || '',
+      tankPosX:     active.tankPosX     || '',
     };
   }, [active, xt]);
 
@@ -409,6 +439,8 @@ export default function CombustivelTab({
       if (field === 'carWeight')    setPesoCarro(val);
       if (field === 'driverWeight') setPesoPiloto(val);
       if (field === 'wheelbaseLen') setWheelbase(val);
+      if (field === 'cgCarX')       setCgLong(val);
+      if (field === 'tankPosX')     setTankPos(val);
     }
     syncingFromCtx.current = false;
   }, [scenarios, activeId, persist, setPesoCarro, setPesoPiloto, setWheelbase]);
@@ -506,8 +538,8 @@ export default function CombustivelTab({
               Infração Regulamentar — Peso
             </div>
             <div style={{ fontSize: 12, color: '#ff7777', marginTop: 2 }}>
-              Peso do carro ({active?.carWeight} kg) excede o limite regulamentar de {pesoMinimo} kg
-              em <strong>{excesso} kg</strong>.
+              Peso do carro ({active?.carWeight} kg) está abaixo do mínimo regulamentar de {pesoMinimo} kg
+              — faltam <strong>{excesso} kg</strong>.
             </div>
           </div>
         </div>
@@ -662,11 +694,10 @@ export default function CombustivelTab({
         {/* Método teórico */}
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>
-            Método Teórico — comprimento da pista × taxa de consumo
+            Método Teórico — consumo médio por volta
           </div>
           <div style={{ ...fieldRow }}>
-            <Field label="Comprimento da pista" value={active.trackLength}     onChange={updateField('trackLength')}     unit="km"     placeholder="4.309" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
-            <Field label="Taxa de consumo"       value={active.consumptionRate} onChange={updateField('consumptionRate')} unit="L/100km" placeholder="55"    COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
+            <Field label="Consumo por volta" value={active.consumptionRate} onChange={updateField('consumptionRate')} unit="L/volta" placeholder="2.5" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
           </div>
         </div>
 
@@ -720,7 +751,7 @@ export default function CombustivelTab({
 
         <div style={fieldRow}>
           <Field label="Número de voltas"     value={active.raceLaps}       onChange={updateField('raceLaps')}       unit="voltas" placeholder="20" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
-          <Field label="Margem de segurança"  value={active.safetyMargin}   onChange={updateField('safetyMargin')}   unit="%"      placeholder="5"  COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
+          <Field label="Margem de segurança"  value={active.safetyMargin}   onChange={updateField('safetyMargin')}   unit="L"      placeholder="2"  COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
@@ -732,7 +763,7 @@ export default function CombustivelTab({
             COLORS={COLORS}
           />
           <CalcBox
-            label={`Combustível necessário${active.safetyMargin ? ` (+${active.safetyMargin}% margem)` : ''}`}
+            label={`Combustível necessário${active.safetyMargin ? ` (+${active.safetyMargin} L margem)` : ''}`}
             value={totalFuel !== null ? totalFuel.toFixed(2) : null}
             unit="L"
             color="#ff8c00"
@@ -757,7 +788,7 @@ export default function CombustivelTab({
             <span style={{ color: COLORS.accent, fontWeight: 700 }}>Resumo: </span>
             {parseFloat(active.raceLaps).toFixed(0)} voltas ×{' '}
             {perLapDisplay.toFixed(3)} L/volta
-            {active.safetyMargin ? ` + ${active.safetyMargin}% margem` : ''}
+            {active.safetyMargin ? ` + ${active.safetyMargin} L margem` : ''}
             {' '}= <span style={{ color: '#ff8c00', fontWeight: 700 }}>{totalFuel.toFixed(2)} L</span>
             {fuelW !== null && <> &nbsp;({fuelW.toFixed(2)} kg)</>}
           </div>

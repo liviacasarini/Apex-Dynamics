@@ -22,4 +22,5 @@ export const TABS = [
   { id: 'performance',     label: 'Performance',        icon: '📈' },
   { id: 'calendario',      label: 'Calendário',         icon: '📅' },
   { id: 'laptime',         label: 'Lap Time',           icon: '⏱️' },
+  { id: 'equipe',          label: 'Equipe',             icon: '📡' },
 ];

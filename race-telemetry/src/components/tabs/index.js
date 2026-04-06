@@ -1,9 +1,0 @@
-export { default as OverviewTab } from './OverviewTab';
-export { default as LapCompareTab } from './LapCompareTab';
-export { default as WOTAnalysisTab } from './WOTAnalysisTab';
-export { default as VitalsTab } from './VitalsTab';
-export { default as ReportTab } from './ReportTab';
-export { default as TrackMapTab } from './TrackMapTab';
-export { default as TemperatureTab } from './TemperatureTab';
-export { default as SetupSheetTab } from './SetupSheetTab';
-export { default as FeedbackTab } from './FeedbackTab';

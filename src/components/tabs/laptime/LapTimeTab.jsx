@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useColors } from '@/context/ThemeContext';
 import { makeTheme } from '@/styles/theme';
+import { useCarWeight } from '@/context/CarWeightContext';
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -23,10 +24,35 @@ function InputField({ label, value, onChange, unit, half, inputBase, textMuted }
   );
 }
 
+function SectionBox({ sectionKey, title, children, collapsed, toggleSection }) {
+  const COLORS = useColors();
+  const theme  = makeTheme(COLORS);
+  return (
+    <div style={theme.card}>
+      <div
+        onClick={() => toggleSection(sectionKey)}
+        style={{
+          fontSize: 13, fontWeight: 700, color: COLORS.accent,
+          marginBottom: collapsed[sectionKey] ? 0 : 14, marginTop: 8,
+          cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', userSelect: 'none',
+        }}
+      >
+        <span>{title}</span>
+        <span style={{ fontSize: 11, fontWeight: 400, color: COLORS.textMuted }}>
+          {collapsed[sectionKey] ? '▸' : '▾'}
+        </span>
+      </div>
+      {!collapsed[sectionKey] && children}
+    </div>
+  );
+}
+
 /* ─── Componente principal ───────────────────────────────────────────────── */
 export default function LapTimeTab({ setupForm, setSetupForm }) {
   const COLORS = useColors();
   const theme  = makeTheme(COLORS);
+  const { setCgHeight, setCgLong } = useCarWeight();
 
   const INPUT_BASE = {
     width: '100%',
@@ -46,25 +72,10 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
   const [collapsed, setCollapsed] = useState({});
   const toggleSection = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const SectionBox = ({ sectionKey, title, children }) => (
-    <div style={theme.card}>
-      <div
-        onClick={() => toggleSection(sectionKey)}
-        style={{
-          fontSize: 13, fontWeight: 700, color: COLORS.accent,
-          marginBottom: collapsed[sectionKey] ? 0 : 14, marginTop: 8,
-          cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
-          alignItems: 'center', userSelect: 'none',
-        }}
-      >
-        <span>{title}</span>
-        <span style={{ fontSize: 11, fontWeight: 400, color: COLORS.textMuted }}>
-          {collapsed[sectionKey] ? '▸' : '▾'}
-        </span>
-      </div>
-      {!collapsed[sectionKey] && children}
-    </div>
-  );
+  /* ─── Helpers ────────────────────────────────────────────────────────────── */
+  const pf = (v, d = NaN) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
+  const pos = (v) => { const n = parseFloat(v); return !isNaN(n) && n > 0; };
+
 
   const updateField = (field) => (val) =>
     setCurrent(prev => ({ ...(prev || {}), [field]: val }));
@@ -99,7 +110,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </div>
 
       {/* ── Motor / Powertrain ── */}
-      <SectionBox sectionKey="motor" title="🔥 Motor / Powertrain">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="motor" title="🔥 Motor / Powertrain">
 
         {/* Motor */}
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px' }}>Motor</div>
@@ -214,10 +225,122 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
             );
           })()}
         </div>
+
+        {/* Diferencial */}
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px' }}>Diferencial</div>
+          <div style={fieldRow}>
+            <InputField label="Tipo"                     value={current.diff_type}              onChange={updateField('diff_type')}                          half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Ramp Aceleração"          value={current.diff_rampAccel}         onChange={updateField('diff_rampAccel')}         unit="°"    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Ramp Desaceleração"       value={current.diff_rampDecel}         onChange={updateField('diff_rampDecel')}         unit="°"    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="% Bloqueio — Aceleração"  value={current.diff_lockAccel}         onChange={updateField('diff_lockAccel')}         unit="%"    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="% Bloqueio — Frenagem"    value={current.diff_lockBrake}         onChange={updateField('diff_lockBrake')}         unit="%"    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Preload"                  value={current.diff_preload}           onChange={updateField('diff_preload')}           unit="Nm"   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Sensibilidade ao Torque"  value={current.diff_torqueSensitivity} onChange={updateField('diff_torqueSensitivity')}             half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+          </div>
+        </div>
+      </SectionBox>
+
+      {/* ── Curva de Torque ── */}
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="torqueCurve" title="📈 Curva de Torque">
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>
+          Insira o torque em diferentes rotações. Quanto mais pontos, mais preciso o cálculo de tempo de volta.
+          Dados disponíveis no relatório de dinamômetro (dyno) ou software do fabricante do motor.
+        </div>
+
+        {/* Cabeçalho da tabela */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 32px', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, paddingLeft: 4 }}>RPM</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, paddingLeft: 4 }}>Torque (Nm)</div>
+          <div />
+        </div>
+
+        {/* Linhas da curva */}
+        {(current.torqueCurve && current.torqueCurve.length > 0
+          ? current.torqueCurve
+          : [{ rpm: '', torque: '' }, { rpm: '', torque: '' }, { rpm: '', torque: '' }]
+        ).map((point, idx) => (
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 32px', gap: 8, marginBottom: 6 }}>
+            <input
+              type="text"
+              value={point.rpm}
+              onChange={e => {
+                const curve = [...(current.torqueCurve || [{ rpm: '', torque: '' }, { rpm: '', torque: '' }, { rpm: '', torque: '' }])];
+                curve[idx] = { ...curve[idx], rpm: e.target.value };
+                updateField('torqueCurve')(curve);
+              }}
+              placeholder="Ex: 3000"
+              style={INPUT_BASE}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="text"
+                value={point.torque}
+                onChange={e => {
+                  const curve = [...(current.torqueCurve || [{ rpm: '', torque: '' }, { rpm: '', torque: '' }, { rpm: '', torque: '' }])];
+                  curve[idx] = { ...curve[idx], torque: e.target.value };
+                  updateField('torqueCurve')(curve);
+                }}
+                placeholder="Ex: 320"
+                style={INPUT_BASE}
+              />
+              <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>Nm</span>
+            </div>
+            <button
+              onClick={() => {
+                const curve = (current.torqueCurve || []).filter((_, i) => i !== idx);
+                updateField('torqueCurve')(curve.length > 0 ? curve : [{ rpm: '', torque: '' }]);
+              }}
+              style={{ width: 32, height: 36, background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: 6, color: COLORS.textMuted, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+            >×</button>
+          </div>
+        ))}
+
+        {/* Botão adicionar ponto */}
+        <button
+          onClick={() => {
+            const curve = [...(current.torqueCurve || [{ rpm: '', torque: '' }]), { rpm: '', torque: '' }];
+            updateField('torqueCurve')(curve);
+          }}
+          style={{ background: 'transparent', border: `1px dashed ${COLORS.border}`, borderRadius: 6, padding: '6px 16px', color: COLORS.textMuted, cursor: 'pointer', fontSize: 12, marginTop: 4, width: '100%' }}
+        >
+          + Adicionar ponto
+        </button>
+
+        {/* Pico calculado pela curva */}
+        {(() => {
+          const curve = (current.torqueCurve || []).filter(p => pos(p.rpm) && pos(p.torque));
+          if (curve.length === 0) return null;
+          const withPower = curve.map(p => ({
+            rpm: parseFloat(p.rpm),
+            torque: parseFloat(p.torque),
+            cv: ((parseFloat(p.torque) * parseFloat(p.rpm) * 2 * Math.PI) / 60 / 1000 / 0.7355),
+          }));
+          const peak = withPower.reduce((max, p) => p.cv > max.cv ? p : max, withPower[0]);
+          const status = curve.length >= 4
+            ? { color: COLORS.green, msg: `✓ ${curve.length} pontos — cálculo preciso` }
+            : { color: COLORS.yellow, msg: `⚠ ${curve.length} ponto(s) — adicione mais ${4 - curve.length} para melhor precisão` };
+          return (
+            <div style={{ marginTop: 14, padding: 12, background: `${status.color}11`, borderRadius: 8, border: `1px solid ${status.color}33` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 3 }}>Pico de potência calculado pela curva</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: status.color }}>
+                    {peak.cv.toFixed(0)} cv @ {peak.rpm.toFixed(0)} RPM
+                  </div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+                    P = T × (RPM × 2π/60) / 1000 kW → ÷ 0.7355 = cv
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: status.color, textAlign: 'right' }}>{status.msg}</div>
+              </div>
+            </div>
+          );
+        })()}
       </SectionBox>
 
       {/* ── Turbocompressor ── */}
-      <SectionBox sectionKey="turbo" title="🌀 Turbocompressor">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="turbo" title="🌀 Turbocompressor">
 
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px' }}>Boost</div>
         {(() => {
@@ -271,7 +394,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Escapamento & Efeitos Aerodinâmicos ── */}
-      <SectionBox sectionKey="escapamento" title="💨 Escapamento & Efeitos Aerodinâmicos">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="escapamento" title="💨 Escapamento & Efeitos Aerodinâmicos">
 
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px' }}>Saída</div>
         <div style={fieldRow}>
@@ -367,7 +490,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Downforce & Arrasto ── */}
-      <SectionBox sectionKey="aero" title="✈️ Downforce & Arrasto">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="aero" title="✈️ Downforce & Arrasto">
         {(() => {
           const cd   = parseFloat(current.aero_cd);
           const cl   = parseFloat(current.aero_cl);
@@ -441,7 +564,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Chassi / Estrutura ── */}
-      <SectionBox sectionKey="chassi" title="🏗️ Chassi / Estrutura">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="chassi" title="🏗️ Chassi / Estrutura">
 
         {/* Peso e distribuição */}
         {(() => {
@@ -470,8 +593,8 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
           <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Centro de Gravidade (CG)</div>
           <div style={fieldRow}>
-            <InputField label="Altura do CG"    value={current.chassis_cgHeight} onChange={updateField('chassis_cgHeight')} unit="mm"                 half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
-            <InputField label="CG Longitudinal" value={current.chassis_cgLong}   onChange={updateField('chassis_cgLong')}   unit="mm / % entre-eixos" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Altura do CG"    value={current.chassis_cgHeight} onChange={v => { updateField('chassis_cgHeight')(v); setCgHeight(v); }} unit="mm"                 half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="CG Longitudinal" value={current.chassis_cgLong}   onChange={v => { updateField('chassis_cgLong')(v);   setCgLong(v);   }} unit="mm / % entre-eixos" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
             <InputField label="CG Lateral"      value={current.chassis_cgLat}    onChange={updateField('chassis_cgLat')}    unit="mm do centro"       half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
           </div>
         </div>
@@ -500,7 +623,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Direção ── */}
-      <SectionBox sectionKey="direcao" title="🎯 Direção">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="direcao" title="🎯 Direção">
         {(() => {
           const ratio      = parseFloat(current.steer_ratio);
           const lockToLock = parseFloat(current.steer_lockToLock);
@@ -540,7 +663,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Dados para Cálculo Dinâmico ── */}
-      <SectionBox sectionKey="dinamica" title="📐 Dados para Cálculo Dinâmico">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="dinamica" title="📐 Dados para Cálculo Dinâmico">
         {(() => {
           const mrF    = parseFloat(current.susp_mrFront);
           const mrR    = parseFloat(current.susp_mrRear);
@@ -676,7 +799,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Distância de Frenagem ── */}
-      <SectionBox sectionKey="frenagem" title="🛑 Distância de Frenagem">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="frenagem" title="🛑 Distância de Frenagem">
 
         {/* Distância de parada */}
         {(() => {
@@ -740,8 +863,85 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
         </div>
       </SectionBox>
 
+      {/* ── Mapa de Consumo ── */}
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="consumptionMap" title="⛽ Mapa de Consumo por Condição">
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>
+          Consumo real varia até 3× entre marcha lenta e aceleração total. Preencher os três pontos
+          reduz a margem de erro no cálculo de combustível e peso ao longo da corrida.
+        </div>
+
+        {/* Cabeçalho */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 8, marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, paddingLeft: 4 }}>Condição de operação</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, paddingLeft: 4 }}>RPM típico</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, paddingLeft: 4 }}>Consumo (L/h)</div>
+        </div>
+
+        {[
+          { consKey: 'cons_idle',   rpmKey: 'cons_idle_rpm',   label: 'Marcha lenta / pit lane', defaultRpm: '1500',  placeholder: 'Ex: 4' },
+          { consKey: 'cons_cruise', rpmKey: 'cons_cruise_rpm', label: 'Cruzeiro (acelerador parcial)', defaultRpm: '4000',  placeholder: 'Ex: 18' },
+          { consKey: 'cons_wot',    rpmKey: 'cons_wot_rpm',    label: 'Aceleração total (WOT)', defaultRpm: current.engine_revLimit || '7000', placeholder: 'Ex: 48' },
+        ].map(({ consKey, rpmKey, label, defaultRpm, placeholder }) => (
+          <div key={consKey} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: COLORS.textPrimary, paddingLeft: 4 }}>{label}</span>
+            <input
+              type="text"
+              value={current[rpmKey] || ''}
+              onChange={e => updateField(rpmKey)(e.target.value)}
+              placeholder={defaultRpm}
+              style={INPUT_BASE}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="text"
+                value={current[consKey] || ''}
+                onChange={e => updateField(consKey)(e.target.value)}
+                placeholder={placeholder}
+                style={INPUT_BASE}
+              />
+              <span style={{ fontSize: 11, color: COLORS.textMuted, whiteSpace: 'nowrap' }}>L/h</span>
+            </div>
+          </div>
+        ))}
+
+        {/* Consumo por volta calculado */}
+        {(() => {
+          const wot    = pf(current.cons_wot,    null);
+          const cruise = pf(current.cons_cruise, null);
+          if (wot === null && cruise === null) return null;
+          const avgLh      = (wot || 0) * 0.42 + (cruise || (wot ? wot * 0.5 : 0)) * 0.58;
+          const tLap       = 90; // estimativa padrão de 1:30
+          const consPerLap = (avgLh * tLap / 3600).toFixed(2);
+          const hasBoth    = wot !== null && cruise !== null;
+          return (
+            <div style={{ marginTop: 12, padding: 12, background: `${COLORS.green}11`, borderRadius: 8, border: `1px solid ${COLORS.green}33` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 3 }}>
+                    Consumo estimado por volta
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.green }}>~{consPerLap} L/volta</div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+                    Modelo: 42% WOT + 58% cruzeiro × tempo de volta
+                  </div>
+                </div>
+                {!hasBoth && (
+                  <div style={{ fontSize: 11, color: COLORS.yellow }}>
+                    ⚠ Preencha WOT + Cruzeiro para maior precisão
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 10, fontStyle: 'italic' }}>
+          💡 Dados disponíveis no software de ECU (mapa de injeção) ou medidos com fluxímetro de combustível em banco de testes.
+        </div>
+      </SectionBox>
+
       {/* ── Eletrônica & Controles ── */}
-      <SectionBox sectionKey="eletronica" title="⚡ Sistemas Eletrônicos & Controles">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="eletronica" title="⚡ Sistemas Eletrônicos & Controles">
 
         <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 8 }}>Engine Maps</div>
         <div style={fieldRow}>
@@ -813,7 +1013,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Híbrido / ERS — Estratégia ── */}
-      <SectionBox sectionKey="hibrido" title="🔋 Híbrido / ERS — Estratégia">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="hibrido" title="🔋 Híbrido / ERS — Estratégia">
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 14 }}>
           Mapas de deploy/harvest e estratégia de estado de carga por volta
         </div>
@@ -832,7 +1032,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </SectionBox>
 
       {/* ── Lubrificação & Arrefecimento ── */}
-      <SectionBox sectionKey="lubrificacao" title="🛢️ Lubrificação & Arrefecimento">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="lubrificacao" title="🛢️ Lubrificação & Arrefecimento">
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 14 }}>
           Faixas ideais de operação e especificações de fluidos
         </div>
@@ -865,6 +1065,318 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
           <InputField label="Capacidade reservatório" value={current.oilCapacity}    onChange={updateField('oilCapacity')}    unit="L"         half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
           <InputField label="Taxa de consumo de óleo" value={current.oilConsumption} onChange={updateField('oilConsumption')} unit="mL/100km"  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
         </div>
+      </SectionBox>
+
+      {/* ── Aerodinâmica Avançada ── */}
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="aeroAvancada" title="✈️ Aerodinâmica Avançada">
+        {(() => {
+          const cd   = parseFloat(current.aero_cd);
+          const cl   = parseFloat(current.aero_cl);
+          const A    = parseFloat(current.aero_frontalArea);
+          const vKmh = parseFloat(current.aero_refSpeed);
+          const dfF  = parseFloat(current.aero_dfFront);
+          const dfR  = parseFloat(current.aero_dfRear);
+          const rho  = 1.225;
+          const vMs  = vKmh / 3.6;
+
+          const efficiency = (!isNaN(cd) && !isNaN(cl) && cd !== 0) ? (cl / cd).toFixed(3) : null;
+          const balance    = (!isNaN(dfF) && !isNaN(dfR) && (dfF + dfR) > 0)
+            ? ((dfF / (dfF + dfR)) * 100).toFixed(1) : null;
+          const fDrag      = (!isNaN(cd) && !isNaN(A) && !isNaN(vMs))
+            ? (0.5 * rho * vMs * vMs * cd * A).toFixed(0) : null;
+          const fDown      = (!isNaN(cl) && !isNaN(A) && !isNaN(vMs))
+            ? (0.5 * rho * vMs * vMs * cl * A).toFixed(0) : null;
+
+          const CALC_BOX_AERO = (label, value, unit, color) => (
+            <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>{label}</label>
+              <div style={{
+                background: COLORS.bg, border: `1px solid ${color || COLORS.border}`,
+                borderRadius: 6, padding: '7px 12px', fontSize: 16, fontWeight: 800,
+                color: value !== null ? (color || COLORS.accent) : COLORS.textMuted,
+                textAlign: 'center', letterSpacing: '0.5px',
+              }}>
+                {value !== null ? `${value}${unit ? ` ${unit}` : ''}` : '—'}
+              </div>
+            </div>
+          );
+
+          return (
+            <>
+              {/* Downforce & Arrasto */}
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Downforce &amp; Arrasto</div>
+              <div style={fieldRow}>
+                <InputField label="Coef. de Arrasto (Cd)"         value={current.aero_cd}          onChange={updateField('aero_cd')}          half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Coef. de Downforce (Cl)"        value={current.aero_cl}          onChange={updateField('aero_cl')}          half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Área Frontal (m²)"              value={current.aero_frontalArea} onChange={updateField('aero_frontalArea')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Velocidade de Ref. p/ cálculos" value={current.aero_refSpeed}    onChange={updateField('aero_refSpeed')}    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="km/h" />
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                {CALC_BOX_AERO('Eficiência Aerodinâmica (Cl/Cd)', efficiency, '', COLORS.accent)}
+                {CALC_BOX_AERO(`Força de Arrasto @ ${!isNaN(vKmh) ? vKmh : '—'} km/h`, fDrag, 'N', '#ff8c00')}
+                {CALC_BOX_AERO(`Força de Downforce @ ${!isNaN(vKmh) ? vKmh : '—'} km/h`, fDown, 'N', COLORS.green)}
+              </div>
+
+              {/* Centro de Pressão */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Centro de Pressão Aerodinâmica</div>
+                <div style={fieldRow}>
+                  <InputField label="Posição Longitudinal" value={current.aero_cpLong} onChange={updateField('aero_cpLong')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="% entre-eixos" />
+                  <InputField label="Posição Lateral"      value={current.aero_cpLat}  onChange={updateField('aero_cpLat')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm do centro" />
+                </div>
+              </div>
+
+              {/* Balanço Aerodinâmico */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Balanço Aerodinâmico Frente / Traseiro</div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <InputField label="Downforce Dianteiro (N)" value={current.aero_dfFront} onChange={updateField('aero_dfFront')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                  <InputField label="Downforce Traseiro (N)"  value={current.aero_dfRear}  onChange={updateField('aero_dfRear')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                  {CALC_BOX_AERO('% Downforce no Eixo Dianteiro', balance, '%', COLORS.accent)}
+                </div>
+              </div>
+
+              {/* Sensibilidade ao Yaw */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Sensibilidade ao Yaw</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+                  Variação de Cd e Cl por grau de ângulo de derrapagem (dados de túnel de vento / CFD)
+                </div>
+                <div style={fieldRow}>
+                  <InputField label="ΔCd por grau de yaw" value={current.aero_yawDeltaCd} onChange={updateField('aero_yawDeltaCd')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="Cd/°" />
+                  <InputField label="ΔCl por grau de yaw" value={current.aero_yawDeltaCl} onChange={updateField('aero_yawDeltaCl')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="Cl/°" />
+                </div>
+              </div>
+
+              {/* Efeito Solo */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Efeito Solo (Ground Effect)</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 8, fontStyle: 'italic' }}>
+                  Variação de downforce com ride height (dados de teste / CFD)
+                </div>
+                <div style={fieldRow}>
+                  <InputField label="ΔDownforce / mm de ride height" value={current.aero_groundDeltaDf} onChange={updateField('aero_groundDeltaDf')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="N/mm" />
+                  <InputField label="Ride Height de Referência"       value={current.aero_groundRefRh}   onChange={updateField('aero_groundRefRh')}   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm" />
+                </div>
+              </div>
+            </>
+          );
+        })()}
+      </SectionBox>
+
+      {/* ── Freio — Análise Avançada ── */}
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="freioAvancado" title="🛑 Freio — Análise Avançada">
+
+        {/* Distância de frenagem */}
+        {(() => {
+          const v    = parseFloat(current.brake_refSpeed);
+          const decG = parseFloat(current.brake_decelG);
+          const vMs  = v / 3.6;
+          const dist = (!isNaN(v) && !isNaN(decG) && decG > 0)
+            ? (vMs * vMs / (2 * 9.81 * decG)).toFixed(1) : null;
+          return (
+            <div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Distância de Frenagem</div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <InputField label="Velocidade de Ref." value={current.brake_refSpeed} onChange={updateField('brake_refSpeed')} unit="km/h" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Desaceleração"      value={current.brake_decelG}   onChange={updateField('brake_decelG')}   unit="G"    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+                  <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Distância de Parada</label>
+                  <div style={{ background: COLORS.bg, border: `1px solid ${dist ? COLORS.accent : COLORS.border}`, borderRadius: 6, padding: '7px 12px', fontSize: 15, fontWeight: 800, color: dist ? COLORS.accent : COLORS.textMuted, textAlign: 'center' }}>
+                    {dist ? `${dist} m` : '—'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Torque de frenagem por eixo */}
+        {(() => {
+          const bias  = parseFloat(current.brakeBias) / 100;
+          const force = parseFloat(current.brake_totalForce);
+          const rF    = parseFloat(current.brake_discRadiusFront) / 1000;
+          const rR    = parseFloat(current.brake_discRadiusRear)  / 1000;
+          const tF = (!isNaN(bias) && !isNaN(force) && !isNaN(rF)) ? (bias * force * rF).toFixed(0) : null;
+          const tR = (!isNaN(bias) && !isNaN(force) && !isNaN(rR)) ? ((1 - bias) * force * rR).toFixed(0) : null;
+          return (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: 600 }}>Torque de Frenagem por Eixo</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 8, fontStyle: 'italic' }}>T = bias × F_total × r_disco</div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <InputField label="Força Total de Frenagem"  value={current.brake_totalForce}       onChange={updateField('brake_totalForce')}       unit="N"  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Raio Ef. Disco Dianteiro" value={current.brake_discRadiusFront}  onChange={updateField('brake_discRadiusFront')}  unit="mm" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+                <InputField label="Raio Ef. Disco Traseiro"  value={current.brake_discRadiusRear}   onChange={updateField('brake_discRadiusRear')}   unit="mm" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                {[['Torque Eixo Dianteiro', tF, COLORS.accent], ['Torque Eixo Traseiro', tR, '#ff8c00']].map(([lbl, val, col]) => (
+                  <div key={lbl} style={{ flex: '1 1 150px', minWidth: 140 }}>
+                    <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>{lbl}</label>
+                    <div style={{ background: COLORS.bg, border: `1px solid ${val ? col : COLORS.border}`, borderRadius: 6, padding: '7px 12px', fontSize: 15, fontWeight: 800, color: val ? col : COLORS.textMuted, textAlign: 'center' }}>
+                      {val ? `${val} Nm` : '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Temperatura */}
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Temperatura</div>
+          <div style={fieldRow}>
+            <InputField label="Temp. Trabalho Disco — Mín" value={current.brake_discTempMin}    onChange={updateField('brake_discTempMin')}    unit="°C" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Temp. Trabalho Disco — Máx" value={current.brake_discTempMax}    onChange={updateField('brake_discTempMax')}    unit="°C" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Fade Point das Pastilhas"   value={current.brake_padFadeTemp}    onChange={updateField('brake_padFadeTemp')}    unit="°C" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label="Deformação do Disco"        value={current.brake_discDeformation} onChange={updateField('brake_discDeformation')} unit="mm" half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+          </div>
+        </div>
+      </SectionBox>
+
+      {/* ── Suspensão — Dinâmica Avançada ── */}
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="suspensaoDin" title="🔩 Suspensão — Dinâmica Avançada">
+        {(() => {
+          const mrF    = parseFloat(current.susp_mrFront);
+          const mrR    = parseFloat(current.susp_mrRear);
+          const mrArbF = parseFloat(current.susp_mrArbFront);
+          const mrArbR = parseFloat(current.susp_mrArbRear);
+          const trkF   = parseFloat(current.susp_trackFront);
+          const trkR   = parseFloat(current.susp_trackRear);
+          const mF     = parseFloat(current.susp_massFront);
+          const mR     = parseFloat(current.susp_massRear);
+          const cF     = parseFloat(current.susp_damperFront);
+          const cR     = parseFloat(current.susp_damperRear);
+
+          const kSpringF = (() => {
+            const fl = parseFloat(current.spring?.fl);
+            const fr = parseFloat(current.spring?.fr);
+            const vals = [fl, fr].filter(v => !isNaN(v));
+            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+          })();
+          const kSpringR = (() => {
+            const rl = parseFloat(current.spring?.rl);
+            const rr = parseFloat(current.spring?.rr);
+            const vals = [rl, rr].filter(v => !isNaN(v));
+            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+          })();
+          const kArbF = parseFloat(current.frontBarRate);
+          const kArbR = parseFloat(current.rearBarRate);
+
+          const kwF = (!isNaN(kSpringF) && !isNaN(mrF)) ? kSpringF * mrF * mrF : NaN;
+          const kwR = (!isNaN(kSpringR) && !isNaN(mrR)) ? kSpringR * mrR * mrR : NaN;
+
+          const kRollF = (() => {
+            const springPart = (!isNaN(kwF) && !isNaN(trkF)) ? kwF * trkF * trkF / 2000 : NaN;
+            const arbPart = (!isNaN(kArbF) && !isNaN(mrArbF) && !isNaN(trkF)) ? kArbF * mrArbF * mrArbF * trkF * trkF / 2000 : 0;
+            return !isNaN(springPart) ? (springPart + arbPart) * (Math.PI / 180) : NaN;
+          })();
+          const kRollR = (() => {
+            const springPart = (!isNaN(kwR) && !isNaN(trkR)) ? kwR * trkR * trkR / 2000 : NaN;
+            const arbPart = (!isNaN(kArbR) && !isNaN(mrArbR) && !isNaN(trkR)) ? kArbR * mrArbR * mrArbR * trkR * trkR / 2000 : 0;
+            return !isNaN(springPart) ? (springPart + arbPart) * (Math.PI / 180) : NaN;
+          })();
+          const rollBalance = (!isNaN(kRollF) && !isNaN(kRollR) && (kRollF + kRollR) > 0)
+            ? (kRollF / (kRollF + kRollR) * 100).toFixed(1) : null;
+
+          const fnF = (!isNaN(kwF) && !isNaN(mF) && mF > 0)
+            ? (1 / (2 * Math.PI)) * Math.sqrt(kwF * 1000 / mF) : NaN;
+          const fnR = (!isNaN(kwR) && !isNaN(mR) && mR > 0)
+            ? (1 / (2 * Math.PI)) * Math.sqrt(kwR * 1000 / mR) : NaN;
+
+          const dampRatioF = (!isNaN(cF) && !isNaN(kwF) && !isNaN(mF) && mF > 0)
+            ? (cF / (2 * Math.sqrt(kwF * 1000 * mF)) * 100).toFixed(1) : null;
+          const dampRatioR = (!isNaN(cR) && !isNaN(kwR) && !isNaN(mR) && mR > 0)
+            ? (cR / (2 * Math.sqrt(kwR * 1000 * mR)) * 100).toFixed(1) : null;
+
+          const SUSP_CALC = (label, value, unit, color) => (
+            <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+              <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>{label}</label>
+              <div style={{
+                background: COLORS.bg, border: `1px solid ${value !== null && !isNaN(value) ? (color || COLORS.accent) : COLORS.border}`,
+                borderRadius: 6, padding: '7px 12px', fontSize: 15, fontWeight: 800,
+                color: (value !== null && !isNaN(value)) ? (color || COLORS.accent) : COLORS.textMuted,
+                textAlign: 'center',
+              }}>
+                {(value !== null && !isNaN(value)) ? `${typeof value === 'number' ? value.toFixed(2) : value}${unit ? ` ${unit}` : ''}` : '—'}
+              </div>
+            </div>
+          );
+
+          return (
+            <>
+              {/* Dados para cálculo dinâmico */}
+              <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Dados para cálculo dinâmico</div>
+              <div style={fieldRow}>
+                <InputField label="Via Dianteira"              value={current.susp_trackFront}  onChange={updateField('susp_trackFront')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm" />
+                <InputField label="Via Traseira"               value={current.susp_trackRear}   onChange={updateField('susp_trackRear')}   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm" />
+                <InputField label="Massa/corner Dianteiro"     value={current.susp_massFront}   onChange={updateField('susp_massFront')}   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="kg" />
+                <InputField label="Massa/corner Traseiro"      value={current.susp_massRear}    onChange={updateField('susp_massRear')}    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="kg" />
+                <InputField label="Rate Amortecedor Dianteiro" value={current.susp_damperFront} onChange={updateField('susp_damperFront')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="N·s/m" />
+                <InputField label="Rate Amortecedor Traseiro"  value={current.susp_damperRear}  onChange={updateField('susp_damperRear')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="N·s/m" />
+              </div>
+
+              {/* Roll Stiffness */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: 600 }}>Roll Stiffness</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, fontStyle: 'italic' }}>
+                  Calculado a partir de: spring rate médio do eixo × MR² + ARB × MR_ARB² × via² / 2000 × π/180
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {SUSP_CALC('Roll Stiffness Dianteiro', kRollF, 'Nm/°', COLORS.accent)}
+                  {SUSP_CALC('Roll Stiffness Traseiro',  kRollR, 'Nm/°', '#ff8c00')}
+                  <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                    <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Balanço de Rigidez (% Di.)</label>
+                    <div style={{
+                      background: COLORS.bg, border: `1px solid ${rollBalance ? COLORS.green : COLORS.border}`,
+                      borderRadius: 6, padding: '7px 12px', fontSize: 15, fontWeight: 800,
+                      color: rollBalance ? COLORS.green : COLORS.textMuted, textAlign: 'center',
+                    }}>
+                      {rollBalance ? `${rollBalance}%` : '—'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Frequência Natural & Amortecimento */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: 600 }}>Frequência Natural &amp; Amortecimento</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, fontStyle: 'italic' }}>
+                  f = (1/2π) × √(K_wheel×1000 / m) &nbsp;|&nbsp; ζ = C / (2×√(K_wheel×1000×m)) × 100%
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {SUSP_CALC('Freq. Natural Dianteira',  fnF, 'Hz', COLORS.accent)}
+                  {SUSP_CALC('Freq. Natural Traseira',   fnR, 'Hz', '#ff8c00')}
+                  {SUSP_CALC('Amort. Crítico Dianteiro', dampRatioF !== null ? parseFloat(dampRatioF) : NaN, '%', COLORS.green)}
+                  {SUSP_CALC('Amort. Crítico Traseiro',  dampRatioR !== null ? parseFloat(dampRatioR) : NaN, '%', COLORS.green)}
+                </div>
+              </div>
+
+              {/* Altura de Rolagem (Roll Center) */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Altura de Rolagem (Roll Center)</div>
+                <div style={fieldRow}>
+                  <InputField label="Roll Center Dianteiro" value={current.susp_rcFront} onChange={updateField('susp_rcFront')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm" />
+                  <InputField label="Roll Center Traseiro"  value={current.susp_rcRear}  onChange={updateField('susp_rcRear')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm" />
+                </div>
+              </div>
+
+              {/* Variação de Camber e Toe com Bump/Droop */}
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: 600 }}>Variação de Camber e Toe com Bump/Droop</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10, fontStyle: 'italic' }}>
+                  Dados de software de geometria (LOTUS, Optimum K, etc.)
+                </div>
+                <div style={fieldRow}>
+                  <InputField label="ΔCamber/mm bump — Dianteiro" value={current.susp_bumpCamberFront} onChange={updateField('susp_bumpCamberFront')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="°/mm" />
+                  <InputField label="ΔCamber/mm bump — Traseiro"  value={current.susp_bumpCamberRear}  onChange={updateField('susp_bumpCamberRear')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="°/mm" />
+                  <InputField label="ΔToe/mm bump — Dianteiro"    value={current.susp_bumpToeFront}    onChange={updateField('susp_bumpToeFront')}    half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm/mm" />
+                  <InputField label="ΔToe/mm bump — Traseiro"     value={current.susp_bumpToeRear}     onChange={updateField('susp_bumpToeRear')}     half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} unit="mm/mm" />
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </SectionBox>
 
     </div>

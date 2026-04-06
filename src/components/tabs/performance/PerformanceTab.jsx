@@ -384,8 +384,20 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
   // Penalidade de altitude na potência (turbinado: compensado; aspirado: ~1%/300m)
   const altitudePenalty = altitude > 0 ? (altitude / 300) * 0.1 : 0; // s extra/volta estimado
 
-  const lapTimeQuali = lapTimeBase > 0 ? lapTimeBase : null;
-  const lapTimeRace  = lapTimeBase > 0 ? lapTimeBase + fuelTimePenalty + altitudePenalty : null;
+  // Fallback: sem dados de curvas mas com comprimento de pista → estimativa por velocidade média
+  let lapTimeBaseUsed = lapTimeBase;
+  let isLapEstimate = false;
+  if (lapTimeBase <= 0 && trackLenKm > 0) {
+    const avgBase   = 130; // km/h média típica de circuito
+    const gripAdj   = activePneu?.muLat ? Math.min(1.25, pf(activePneu.muLat, 1.5) / 1.5) : 1.0;
+    const powerAdj  = motorPotCV > 0 && totalMass > 0
+      ? Math.min(1.2, Math.max(0.85, (motorPotCV / totalMass) / 0.5)) : 1.0;
+    lapTimeBaseUsed = (trackLenKm / (avgBase * gripAdj * powerAdj)) * 3600;
+    isLapEstimate   = true;
+  }
+
+  const lapTimeQuali = lapTimeBaseUsed > 0 ? lapTimeBaseUsed : null;
+  const lapTimeRace  = lapTimeBaseUsed > 0 ? lapTimeBaseUsed + fuelTimePenalty + altitudePenalty : null;
 
   // Velocidade máxima estimada
   let vMax = 0;
@@ -552,8 +564,26 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
     mrFront, mrRear, brakeBias, decelG, turboLag,
   ].filter(v => v > 0).length;
 
+  // ── Confiança ponderada do tempo de volta (0–100) ─────────────────────────
+  let lapTimeConfidence = 0;
+  if (trackLenKm > 0)                                      lapTimeConfidence += 20;
+  if (cornersLow + cornersMed + cornersFast > 0)            lapTimeConfidence += 15;
+  if (carMass > 0)                                          lapTimeConfidence += 8;
+  if (driverMass > 0)                                       lapTimeConfidence += 4;
+  if (activePneu?.muLat)                                    lapTimeConfidence += 10;
+  if (motorPotCV > 0)                                       lapTimeConfidence += 8;
+  if (setup?.aero_cd && setup?.aero_cl)                     lapTimeConfidence += 7;
+  if (activePneu?.tempOtimaGrip && temp?.trackTemp)         lapTimeConfidence += 7;
+  if (fuelPerLap100km > 0)                                  lapTimeConfidence += 5;
+  if (pilot?.tireWearMultiplier)                            lapTimeConfidence += 4;
+  if (degSPorVolta > 0)                                     lapTimeConfidence += 4;
+  if (gears.length > 0 && finalDrive > 0)                   lapTimeConfidence += 4;
+  if (trackCustom?.gripMu)                                  lapTimeConfidence += 4;
+  lapTimeConfidence = Math.min(100, lapTimeConfidence);
+
   return {
     warnings, filledVars, totalVars,
+    lapTimeConfidence, isLapEstimate,
     // Bloco 1
     lapTimeQuali, lapTimeRace, vMax, gripThermal, gripAvailable,
     fuelPerLapL, fuelTimePenalty, altitudePenalty, tCornerLow, tCornerMed, tCornerFast, tStraightsTotal,
@@ -590,6 +620,8 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
 
   const [showWarnings, setShowWarnings] = useState(false);
   const [activeBlock, setActiveBlock] = useState('all');
+  const [selectedSetupId, setSelectedSetupId] = useState(null);
+  const [selectedTireId,  setSelectedTireId]  = useState(null);
 
   // ── Leitura de dados cross-tab ─────────────────────────────────────────────
   const peso       = useMemo(() => { try { const r = localStorage.getItem(`rt_peso_${profileId}`);      return r ? JSON.parse(r) : null; } catch { return null; } }, [profileId]);
@@ -601,17 +633,36 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
   const pneusSession = useMemo(() => readPneusSession(profileId), [profileId]);
   const regs       = useMemo(() => readRegulations(), []);
   const mechSpecs  = useMemo(() => readMechanicSpecs(profileId), [profileId]);
-  const setup      = useMemo(() => readLatestSetup(profileId), [profileId]);
   const temp       = useMemo(() => readLatestTemp(), []);
 
+  // ── Setup selecionado (do perfil) ou fallback para readLatestSetup ─────────
+  const savedSetups = activeProfile?.setups || [];
+  const setup = useMemo(() => {
+    if (selectedSetupId) {
+      const found = savedSetups.find(s => s.id === selectedSetupId);
+      if (found) return found.data;
+    }
+    // fallback: setup mais recente do perfil, ou do localStorage legado
+    if (savedSetups.length > 0) return savedSetups[0].data;
+    return readLatestSetup(profileId);
+  }, [selectedSetupId, savedSetups, profileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pneu selecionado ───────────────────────────────────────────────────────
+  const selectedPneusLib = useMemo(() => {
+    if (!selectedTireId) return pneusLib;
+    const tire = pneusLib.find(t => t.id === selectedTireId);
+    return tire ? [tire] : pneusLib;
+  }, [selectedTireId, pneusLib]);
+
   const result = useMemo(() => computePerformance({
-    peso, fuel: fuelScen, track, trackCustom, pilots, pneusLib, pneusSession,
+    peso, fuel: fuelScen, track, trackCustom, pilots, pneusLib: selectedPneusLib, pneusSession,
     regs, mechSpecs, setup, temp, profileParts, profileId,
-  }), [peso, fuelScen, track, trackCustom, pilots, pneusLib, pneusSession,
+  }), [peso, fuelScen, track, trackCustom, pilots, selectedPneusLib, pneusSession,
        regs, mechSpecs, setup, temp, profileParts, profileId]);
 
   const {
     warnings, filledVars, totalVars,
+    lapTimeConfidence, isLapEstimate,
     lapTimeQuali, lapTimeRace, vMax, gripAvailable,
     fuelPerLapL, fuelTimePenalty, tCornerLow, tCornerMed, tCornerFast, tStraightsTotal,
     freqFront, freqRear, freqStatus, rollBalance, handlingTendency, aeroBalance, aeroVsMech,
@@ -660,6 +711,157 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
           Análise teórica com base em todas as configurações do perfil ativo
         </div>
       </div>
+
+      {/* ── Seletor de Setup Sheet e Pneu ───────────────────────────────────── */}
+      <div style={{
+        background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+        padding: '14px 16px', marginBottom: 14,
+        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+      }}>
+        {/* Setup Sheet */}
+        <div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            📋 Setup Sheet
+          </div>
+          {savedSetups.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic', padding: '7px 0' }}>
+              Nenhum setup salvo — salve um setup na aba Setup Sheet
+            </div>
+          ) : (
+            <select
+              value={selectedSetupId || ''}
+              onChange={e => setSelectedSetupId(e.target.value || null)}
+              style={{ ...IB, width: '100%', cursor: 'pointer' }}
+            >
+              <option value="">Mais recente ({savedSetups[0]?.name || '—'})</option>
+              {savedSetups.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.savedAt ? ` — ${new Date(s.savedAt).toLocaleDateString('pt-BR')}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {selectedSetupId && (() => {
+            const s = savedSetups.find(x => x.id === selectedSetupId);
+            return s ? (
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>
+                Salvo em: {s.savedAt ? new Date(s.savedAt).toLocaleString('pt-BR') : '—'}
+              </div>
+            ) : null;
+          })()}
+        </div>
+
+        {/* Pneu */}
+        <div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+            ⚫ Composto de Pneu
+          </div>
+          {pneusLib.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textMuted, fontStyle: 'italic', padding: '7px 0' }}>
+              Nenhum composto cadastrado — adicione na aba Pneus
+            </div>
+          ) : (
+            <select
+              value={selectedTireId || ''}
+              onChange={e => setSelectedTireId(e.target.value || null)}
+              style={{ ...IB, width: '100%', cursor: 'pointer' }}
+            >
+              <option value="">Todos os compostos</option>
+              {pneusLib.map(t => (
+                <option key={t.id} value={t.id}>
+                  {[t.fabricante, t.modelo, t.composto].filter(Boolean).join(' · ')}
+                </option>
+              ))}
+            </select>
+          )}
+          {selectedTireId && (() => {
+            const t = pneusLib.find(x => x.id === selectedTireId);
+            return t ? (
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>
+                Janela térmica: {t.tempMin ?? '—'}°C – {t.tempMax ?? '—'}°C
+              </div>
+            ) : null;
+          })()}
+        </div>
+      </div>
+
+      {/* ── Painel Hero — Tempo de Volta ────────────────────────────────────── */}
+      {(() => {
+        const confColor = lapTimeConfidence >= 75 ? C.green
+          : lapTimeConfidence >= 50 ? C.yellow
+          : lapTimeConfidence >= 25 ? '#f97316'
+          : '#ff4444';
+        const confLabel = lapTimeConfidence >= 75 ? 'Estimativa precisa'
+          : lapTimeConfidence >= 50 ? 'Boa estimativa'
+          : lapTimeConfidence >= 25 ? 'Estimativa aproximada'
+          : 'Estimativa muito bruta';
+
+        const missingHints = [];
+        if (!lapTimeQuali) missingHints.push('comprimento da pista');
+        else {
+          if (!(result.tCornerLow > 0 || result.tCornerMed > 0 || result.tCornerFast > 0))
+            missingHints.push('tipo e quantidade de curvas (PistasTab)');
+          if (!result.activePneu?.muLat) missingHints.push('μ do composto de pneu');
+          if (!result.carMass)           missingHints.push('peso do carro');
+          if (!result.motorPotCV)        missingHints.push('potência do motor');
+        }
+
+        return (
+          <div style={{
+            background: C.surface, border: `2px solid ${confColor}44`,
+            borderRadius: 12, padding: '20px 24px', marginBottom: 14,
+            display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, alignItems: 'center',
+          }}>
+            {/* Tempos */}
+            <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>
+                  ⏱ Tempo Teórico — Quali
+                </div>
+                <div style={{ fontSize: 40, fontWeight: 900, color: C.accent, letterSpacing: -2, lineHeight: 1 }}>
+                  {lapTimeQuali ? fmtTime(lapTimeQuali) : '—'}
+                </div>
+                {isLapEstimate && (
+                  <div style={{ fontSize: 10, color: '#f97316', marginTop: 3, fontStyle: 'italic' }}>
+                    ⚠ Estimativa por velocidade média — preencha curvas na PistasTab
+                  </div>
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>
+                  🏁 Corrida (carga plena)
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: C.textPrimary, letterSpacing: -1, lineHeight: 1 }}>
+                  {lapTimeRace ? fmtTime(lapTimeRace) : '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* Confiança */}
+            <div style={{ minWidth: 180 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: C.textMuted }}>Confiança do cálculo</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: confColor }}>{lapTimeConfidence}%</span>
+              </div>
+              <div style={{ background: C.border + '44', borderRadius: 6, height: 10, overflow: 'hidden', marginBottom: 6 }}>
+                <div style={{
+                  width: `${lapTimeConfidence}%`, height: '100%', borderRadius: 6,
+                  background: confColor, transition: 'width 0.6s ease',
+                }} />
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: confColor, marginBottom: missingHints.length ? 4 : 0 }}>
+                {confLabel}
+              </div>
+              {missingHints.length > 0 && (
+                <div style={{ fontSize: 10, color: C.textMuted }}>
+                  Preencha: {missingHints.slice(0, 2).join(', ')}
+                  {missingHints.length > 2 ? ` +${missingHints.length - 2} mais` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Barra de completude ──────────────────────────────────────────────── */}
       <div style={{

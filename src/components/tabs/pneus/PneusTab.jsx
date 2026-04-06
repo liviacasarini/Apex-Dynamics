@@ -31,7 +31,9 @@ import {
 import { useColors } from '@/context/ThemeContext';
 import { makeTheme } from '@/styles/theme';
 import { PrintFooter } from '@/components/common';
-import { readLatestTemp } from '@/core/crossTabSync';
+import { readLatestTemp, readRegulations } from '@/core/crossTabSync';
+import { REG_PESO_CHANGED_EVENT } from '@/context/CarWeightContext';
+import { TRACK_DATABASE } from '@/core/tracks';
 
 // ── Opções de composto (expandido com subtypes) ──────────────────────────────
 const COMPOUND_OPTIONS = [
@@ -97,6 +99,7 @@ const DEFAULT_CONDITIONS = {
 // Biblioteca de compostos — entrada padrão
 const DEFAULT_COMPOUND_ENTRY = () => ({
   id: '',
+  nomeCustom: '',
   fabricante: '',
   modelo: '',
   composto: '',
@@ -174,12 +177,26 @@ const DEFAULT_STINT = () => ({
   zFr: { inner: '', center: '', outer: '' },
   zRl: { inner: '', center: '', outer: '' },
   zRr: { inner: '', center: '', outer: '' },
+  trackTempRef: '',
+  ambientTempRef: '',
   voltas: '',
   parcialTroca: false,
   parcialCanto: '',
   parcialVolta: '',
   parcialComposto: '',
   observacao: '',
+  // Condições da saída
+  trackId: '',
+  trackName: '',
+  weather: '',
+  trackState: '',
+  trackStateOther: '',
+  humidity: '',
+  horaInicial: '',
+  horaFinal: '',
+  trackTempFinal: '',
+  ambientTempFinal: '',
+  humidityFinal: '',
 });
 
 // ── Componentes auxiliares ────────────────────────────────────────────────────
@@ -348,11 +365,11 @@ function PacejkaBlock({ entry, expandedPacejka, setExpandedPacejka, updateCompou
           {/* Lateral */}
           <SectionLabel color={COLORS.purple}>Coeficientes Laterais (Fy vs slip angle α)</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-            {[['pBLat','B (Stiffness)'],['pCLat','C (Shape)'],['pDLat','D (Peak, N)'],['pELat','E (Curvature)']].map(([k,lbl]) => (
+            {[['pBLat','B (Stiffness)','Ex: 10'],['pCLat','C (Shape)','Ex: 1.6'],['pDLat','D (Peak, N)','Ex: 3200'],['pELat','E (Curvature)','Ex: -1.2']].map(([k,lbl,ph]) => (
               <Field key={k} label={lbl} textMuted={COLORS.textMuted}>
                 <input type="number" step="0.01" value={entry[k]}
                   onChange={(e) => updateCompoundField(entry.id, k, e.target.value)}
-                  placeholder="—" style={INPUT_STYLE} />
+                  placeholder={ph} style={INPUT_STYLE} />
               </Field>
             ))}
           </div>
@@ -360,11 +377,11 @@ function PacejkaBlock({ entry, expandedPacejka, setExpandedPacejka, updateCompou
           {/* Longitudinal */}
           <SectionLabel color={COLORS.purple}>Coeficientes Longitudinais (Fx vs slip ratio κ)</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-            {[['pBLong','B (Stiffness)'],['pCLong','C (Shape)'],['pDLong','D (Peak, N)'],['pELong','E (Curvature)']].map(([k,lbl]) => (
+            {[['pBLong','B (Stiffness)','Ex: 12'],['pCLong','C (Shape)','Ex: 1.7'],['pDLong','D (Peak, N)','Ex: 3500'],['pELong','E (Curvature)','Ex: -0.8']].map(([k,lbl,ph]) => (
               <Field key={k} label={lbl} textMuted={COLORS.textMuted}>
                 <input type="number" step="0.01" value={entry[k]}
                   onChange={(e) => updateCompoundField(entry.id, k, e.target.value)}
-                  placeholder="—" style={INPUT_STYLE} />
+                  placeholder={ph} style={INPUT_STYLE} />
               </Field>
             ))}
           </div>
@@ -375,11 +392,11 @@ function PacejkaBlock({ entry, expandedPacejka, setExpandedPacejka, updateCompou
             Opcional. Preencha para gerar a curva Mz × α. Se preferir, use apenas o campo "Self-aligning Torque Mz (ref.)" na seção Comportamento Dinâmico.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
-            {[['pBMz','B (Stiffness)'],['pCMz','C (Shape)'],['pDMz','D (Peak, N·m)'],['pEMz','E (Curvature)']].map(([k,lbl]) => (
+            {[['pBMz','B (Stiffness)','Ex: 8'],['pCMz','C (Shape)','Ex: 2.0'],['pDMz','D (Peak, N·m)','Ex: 55'],['pEMz','E (Curvature)','Ex: -0.5']].map(([k,lbl,ph]) => (
               <Field key={k} label={lbl} textMuted={COLORS.textMuted}>
                 <input type="number" step="0.01" value={entry[k]}
                   onChange={(e) => updateCompoundField(entry.id, k, e.target.value)}
-                  placeholder="—" style={INPUT_STYLE} />
+                  placeholder={ph} style={INPUT_STYLE} />
               </Field>
             ))}
           </div>
@@ -531,19 +548,19 @@ function CamberMuBlock({ entry, updateCompoundField, COLORS, INPUT_STYLE }) {
   const [expanded, setExpanded] = useState(false);
   const pf = (k) => parseFloat(entry[k]);
 
-  const hasDfdy  = (entry.dFydGamma !== '' && !isNaN(pf('dFydGamma'))) || autoDfdy !== null;
-  const hasMuT   = entry.muLat !== '' && entry.tempOtimaGrip !== '' && entry.kTemp !== '' &&
-                   !isNaN(pf('muLat')) && !isNaN(pf('tempOtimaGrip')) && !isNaN(pf('kTemp'));
-  const hasMuFz  = entry.muLat !== '' && entry.fzRef !== '' && entry.loadSensitivity !== '' &&
-                   !isNaN(pf('muLat')) && !isNaN(pf('fzRef')) && !isNaN(pf('loadSensitivity'));
-  const hasAny   = hasDfdy || hasMuT || hasMuFz;
-
   // dFy/dγ auto-calc: usa camberThrust / gammaRef (automático)
   const autoDfdy = (() => {
     const ct = pf('camberThrust'), gr = pf('gammaRef');
     if (isNaN(ct) || isNaN(gr) || gr === 0) return null;
     return (ct / gr).toFixed(2);
   })();
+
+  const hasDfdy  = (entry.dFydGamma !== '' && !isNaN(pf('dFydGamma'))) || autoDfdy !== null;
+  const hasMuT   = entry.muLat !== '' && entry.tempOtimaGrip !== '' && entry.kTemp !== '' &&
+                   !isNaN(pf('muLat')) && !isNaN(pf('tempOtimaGrip')) && !isNaN(pf('kTemp'));
+  const hasMuFz  = entry.muLat !== '' && entry.fzRef !== '' && entry.loadSensitivity !== '' &&
+                   !isNaN(pf('muLat')) && !isNaN(pf('fzRef')) && !isNaN(pf('loadSensitivity'));
+  const hasAny   = hasDfdy || hasMuT || hasMuFz;
   const displayDfdy = entry.dFydGamma !== '' ? entry.dFydGamma : (autoDfdy ?? '');
 
   // Gráfico Fy×γ — modelo linear dFy/dγ · γ
@@ -622,7 +639,7 @@ function CamberMuBlock({ entry, updateCompoundField, COLORS, INPUT_STYLE }) {
               <Field label="dFy/dγ  (N/°)" textMuted={COLORS.textMuted}>
                 <input type="number" step="0.1" value={displayDfdy}
                   onChange={(e) => updateCompoundField(entry.id, 'dFydGamma', e.target.value)}
-                  placeholder="—" style={INPUT_STYLE} />
+                  placeholder="Ex: 60" style={INPUT_STYLE} />
               </Field>
             </div>
             {hasDfdy && fyGammaData.length > 0 && (
@@ -766,6 +783,33 @@ export default function PneusTab({
 
   // ── Cross-tab: condições do último registro de temperatura ──
   const latestTemp = useMemo(() => readLatestTemp(), []);
+
+  // ── Cross-tab: limites regulamentares de pneus ──
+  const [regLimits, setRegLimits] = useState(() => {
+    const r = readRegulations();
+    return {
+      pressaoMin:    r.pneusPressaoMin   || '',
+      larguraDiant:  r.pneusLarguraDiant || '',
+      larguraTras:   r.pneusLarguraTras  || '',
+      fornecedor:    r.pneusFornecedor   || '',
+    };
+  });
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!e.detail) return;
+      const d = e.detail;
+      setRegLimits(prev => ({
+        pressaoMin:   d.pneusPressaoMin   !== undefined ? d.pneusPressaoMin   : prev.pressaoMin,
+        larguraDiant: d.pneusLarguraDiant !== undefined ? d.pneusLarguraDiant : prev.larguraDiant,
+        larguraTras:  d.pneusLarguraTras  !== undefined ? d.pneusLarguraTras  : prev.larguraTras,
+        fornecedor:   d.pneusFornecedor   !== undefined ? d.pneusFornecedor   : prev.fornecedor,
+      }));
+    };
+    window.addEventListener(REG_PESO_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(REG_PESO_CHANGED_EVENT, handler);
+  }, []);
+
   const theme = makeTheme(COLORS);
   const INPUT_STYLE = {
     width: '100%',
@@ -799,6 +843,7 @@ export default function PneusTab({
 
   const [saved,            setSaved]            = useState(false);
   const [showSaved,        setShowSaved]        = useState(false);
+  const [showRefDropdown,  setShowRefDropdown]  = useState(false);
   const [newGroupName,     setNewGroupName]     = useState('');
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
   const [selectedGroupId,  setSelectedGroupId]  = useState('');
@@ -843,7 +888,7 @@ export default function PneusTab({
   const addInventoryRow = () => {
     setInventory((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), compound: '', qty: '', kmAntes: '', kmEntries: [], notes: '' },
+      { id: crypto.randomUUID(), compoundId: '', compound: '', qty: '', kmAntes: '', kmEntries: [], notes: '' },
     ]);
   };
 
@@ -965,6 +1010,19 @@ export default function PneusTab({
     setSaved(false);
   };
 
+  const loadRefIntoSessao = (ref) => {
+    setTyres(prev => ({
+      ...prev,
+      compound: ref.compoundId || prev.compound,
+      fl: { ...prev.fl, ideal: ref.fl || prev.fl.ideal },
+      fr: { ...prev.fr, ideal: ref.fr || prev.fr.ideal },
+      rl: { ...prev.rl, ideal: ref.rl || prev.rl.ideal },
+      rr: { ...prev.rr, ideal: ref.rr || prev.rr.ideal },
+    }));
+    setSaved(false);
+    setShowRefDropdown(false);
+  };
+
   const updateCondition = (field, value) => {
     setConditions((prev) => ({ ...prev, [field]: value }));
     setSaved(false);
@@ -1035,7 +1093,7 @@ export default function PneusTab({
   const hasTEV = tevRows.some((r) => r.t !== null || r.eVal !== null || r.vVal !== null);
 
   // ── NOVO: Biblioteca de Compostos ─────────────────────────────────────────
-  const libraryKey = `rt_tyre_library_${activeProfileId || 'default'}`;
+  const libraryKey = 'rt_tyre_library';
   const [compoundLibrary, setCompoundLibrary] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(libraryKey));
@@ -1055,9 +1113,18 @@ export default function PneusTab({
     catch {}
   }, [compoundLibrary, libraryKey]);
 
-  const [showLibrary,      setShowLibrary]      = useState(false);
-  const [expandedCompound, setExpandedCompound] = useState(null);
-  const [expandedPacejka,  setExpandedPacejka]  = useState(null);
+  const [showInventory,        setShowInventory]        = useState(true);
+  const [showLibrary,          setShowLibrary]          = useState(false);
+  const [expandedCompound,     setExpandedCompound]     = useState(null);
+  const [expandedPacejka,      setExpandedPacejka]      = useState(null);
+  const [editingCompoundId,    setEditingCompoundId]    = useState(null);
+  const [editingCompoundDraft, setEditingCompoundDraft] = useState('');
+  const [savedFeedbackId,      setSavedFeedbackId]      = useState(null);
+
+  const saveCompoundFeedback = (id) => {
+    setSavedFeedbackId(id);
+    setTimeout(() => setSavedFeedbackId(null), 2500);
+  };
 
   const addCompoundEntry = () => {
     const entry = { ...DEFAULT_COMPOUND_ENTRY(), id: crypto.randomUUID() };
@@ -1076,6 +1143,7 @@ export default function PneusTab({
   };
 
   const getCompoundDisplayName = (entry) => {
+    if (entry.nomeCustom?.trim()) return entry.nomeCustom.trim();
     const parts = [
       entry.fabricante,
       entry.modelo,
@@ -1102,6 +1170,48 @@ export default function PneusTab({
   const [expandedStint, setExpandedStint] = useState(null);
   const [showStintForm, setShowStintForm] = useState(false);
   const [newStint,      setNewStint]      = useState(DEFAULT_STINT);
+
+  // ── Pressões de Referência ────────────────────────────────────────────────
+  const refsKey = `rt_tyre_refs_${activeProfileId || 'default'}`;
+  const [pressaoRefs, setPressaoRefs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(refsKey)) || []; }
+    catch { return []; }
+  });
+  useEffect(() => {
+    try { setPressaoRefs(JSON.parse(localStorage.getItem(refsKey)) || []); }
+    catch { setPressaoRefs([]); }
+  }, [refsKey]);
+  useEffect(() => {
+    try { localStorage.setItem(refsKey, JSON.stringify(pressaoRefs)); }
+    catch {}
+  }, [pressaoRefs, refsKey]);
+
+  const [showRefForm,  setShowRefForm]  = useState(false);
+  const [newRef,       setNewRef]       = useState({ name: '', compoundId: '', trackName: '', fl: '', fr: '', rl: '', rr: '', notes: '' });
+
+  const addPressaoRef = () => {
+    if (!newRef.name.trim()) return;
+    setPressaoRefs(prev => [...prev, { ...newRef, id: crypto.randomUUID(), savedAt: new Date().toISOString() }]);
+    setNewRef({ name: '', compoundId: '', trackName: '', fl: '', fr: '', rl: '', rr: '', notes: '' });
+    setShowRefForm(false);
+  };
+
+  const deletePressaoRef = (id) => setPressaoRefs(prev => prev.filter(r => r.id !== id));
+
+  const loadPressaoRef = (ref) => {
+    setNewStint(prev => ({
+      ...prev,
+      compostoId:  ref.compoundId || prev.compostoId,
+      pfFL: ref.fl || prev.pfFL,
+      pfFR: ref.fr || prev.pfFR,
+      pfRL: ref.rl || prev.pfRL,
+      pfRR: ref.rr || prev.pfRR,
+    }));
+    if (!showStintForm) {
+      openNewStintForm();
+      setTimeout(() => loadPressaoRef(ref), 50);
+    }
+  };
 
   const openNewStintForm = () => {
     const now = new Date();
@@ -1135,6 +1245,19 @@ export default function PneusTab({
     ));
   };
 
+  const updateStintConditionRef = (id, field, tempLogId, tempLogEntries) => {
+    const entry = tempLogEntries.find((e) => e.id === tempLogId);
+    const val = entry ? String(field === 'trackTemp' ? (entry.track ?? '') : (entry.ambient ?? '')) : '';
+    setStints((prev) => prev.map((s) => {
+      if (s.id !== id) return s;
+      return {
+        ...s,
+        [`${field}Ref`]: tempLogId,
+        [field]: tempLogId ? val : s[field],
+      };
+    }));
+  };
+
   const deleteStint = (id) => {
     setStints((prev) => prev.filter((s) => s.id !== id));
     if (expandedStint === id) setExpandedStint(null);
@@ -1154,80 +1277,276 @@ export default function PneusTab({
   return (
     <div style={{ padding: 24 }}>
 
-      {/* ── Pneus Salvos no Perfil ── */}
-      {profileTireSets.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <button
-            onClick={() => setShowSaved((v) => !v)}
-            style={{
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              cursor: 'pointer', border: `1px solid ${showSaved ? COLORS.green : COLORS.border}`,
-              background: showSaved ? `${COLORS.green}15` : 'transparent',
-              color: showSaved ? COLORS.green : COLORS.textSecondary,
-              transition: 'all 0.2s',
-            }}
-          >
-            🏎️ Pneus Salvos ({profileTireSets.length})
-          </button>
+      {/* ── Sessão Atual — Pressões & TEV ── */}
+      <div style={theme.card}>
+        {/* Banner regulamentar de pneus */}
+        {(regLimits.pressaoMin || regLimits.larguraDiant || regLimits.larguraTras || regLimits.fornecedor) && (
+          <div style={{
+            background: `${COLORS.blue}10`,
+            border: `1px solid ${COLORS.blue}44`,
+            borderRadius: 8,
+            padding: '8px 12px',
+            marginBottom: 12,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 12,
+            alignItems: 'center',
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: COLORS.blue, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              📋 Regulamento
+            </span>
+            {regLimits.pressaoMin && (
+              <span style={{ fontSize: 11, color: COLORS.textSecondary }}>
+                Pressão mín: <strong style={{ color: COLORS.blue }}>{regLimits.pressaoMin} PSI</strong>
+              </span>
+            )}
+            {regLimits.larguraDiant && (
+              <span style={{ fontSize: 11, color: COLORS.textSecondary }}>
+                Largura diant. máx: <strong style={{ color: COLORS.blue }}>{regLimits.larguraDiant} mm</strong>
+              </span>
+            )}
+            {regLimits.larguraTras && (
+              <span style={{ fontSize: 11, color: COLORS.textSecondary }}>
+                Largura tras. máx: <strong style={{ color: COLORS.blue }}>{regLimits.larguraTras} mm</strong>
+              </span>
+            )}
+            {regLimits.fornecedor && (
+              <span style={{ fontSize: 11, color: COLORS.textSecondary }}>
+                Fornecedor: <strong style={{ color: COLORS.blue }}>{regLimits.fornecedor}</strong>
+              </span>
+            )}
+          </div>
+        )}
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <div style={theme.cardTitle}>🔧 Sessão Atual — Pressões & TEV</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+              T = Pressão Ideal &nbsp;·&nbsp; E = T − Pq (desvio) &nbsp;·&nbsp; V = Pq − Pf (build-up)
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              value={tyres.compound || ''}
+              onChange={e => { setTyres(prev => ({ ...prev, compound: e.target.value })); setSaved(false); }}
+              style={{ ...SELECT_STYLE, fontSize: 12, padding: '5px 10px', width: 'auto', minWidth: 140 }}>
+              <option value="">— Composto —</option>
+              {compoundLibrary.map(c => (
+                <option key={c.id} value={c.id}>{getCompoundDisplayName(c)}</option>
+              ))}
+            </select>
 
-          {showSaved && (
-            <div style={{ ...theme.card, marginTop: 8 }}>
-              <div style={theme.cardTitle}>🏎️ Conjuntos Salvos</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {profileTireSets.map((ts) => {
-                  const compound = ts.tyres?.compound || '';
-                  const compoundLabel = COMPOUND_LABEL[compound] || ts.tyres?.compoundOther || compound;
-                  const group = profileGroups.find((g) => g.id === ts.groupId);
-                  return (
-                    <div key={ts.id} style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '8px 12px',
-                      background: `${COLORS.bgCard}80`, borderRadius: 8,
-                      border: `1px solid ${COLORS.border}22`,
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{ts.name}</div>
-                        <div style={{ fontSize: 11, color: COLORS.textMuted, display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
-                          {group && <span style={{ background: `${COLORS.blue}20`, color: COLORS.blue, padding: '1px 6px', borderRadius: 4 }}>📁 {group.name}</span>}
-                          {compoundLabel && <span style={{ background: `${COLORS.green}20`, color: COLORS.green, padding: '1px 6px', borderRadius: 4 }}>{compoundLabel}</span>}
-                          {ts.conditions?.trackTemp && <span style={{ background: `${COLORS.orange}20`, color: COLORS.orange, padding: '1px 6px', borderRadius: 4 }}>Pista {ts.conditions.trackTemp}°C</span>}
-                          {ts.savedAt && <span>📅 {new Date(ts.savedAt).toLocaleDateString('pt-BR')}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => { onLoadTireSet?.(ts.id); setShowSaved(false); }}
-                          style={{ ...SELECT_STYLE, width: 'auto', padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: COLORS.textPrimary }}>
-                          Carregar
-                        </button>
-                        <button onClick={() => onDeleteTireSet?.(ts.id)}
-                          style={{ ...SELECT_STYLE, width: 'auto', padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: COLORS.accent, borderColor: COLORS.accent }}>
-                          Excluir
-                        </button>
-                      </div>
+            {/* Botão Carregar Referência */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowRefDropdown(v => !v)}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  background: showRefDropdown ? `${COLORS.blue}18` : 'transparent',
+                  border: `1px solid ${showRefDropdown ? COLORS.blue : COLORS.border}`,
+                  color: showRefDropdown ? COLORS.blue : COLORS.textSecondary,
+                }}>
+                📂 Referências {pressaoRefs.length > 0 && `(${pressaoRefs.length})`}
+              </button>
+              {showRefDropdown && (
+                <div style={{
+                  position: 'absolute', top: '110%', right: 0, zIndex: 100,
+                  background: COLORS.bgCard, border: `1px solid ${COLORS.border}`,
+                  borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
+                  minWidth: 240, maxHeight: 280, overflowY: 'auto',
+                  padding: '6px 0',
+                }}>
+                  {pressaoRefs.length === 0 ? (
+                    <div style={{ padding: '12px 16px', fontSize: 12, color: COLORS.textMuted, textAlign: 'center' }}>
+                      Nenhuma referência salva ainda.<br/>
+                      <span style={{ fontSize: 11 }}>Crie em "Pressões de Referência" abaixo.</span>
                     </div>
+                  ) : pressaoRefs.map(ref => {
+                    const compound = compoundLibrary.find(c => c.id === ref.compoundId);
+                    return (
+                      <button
+                        key={ref.id}
+                        onClick={() => loadRefIntoSessao(ref)}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left',
+                          padding: '9px 14px', background: 'transparent', border: 'none',
+                          cursor: 'pointer', fontSize: 12, color: COLORS.textPrimary,
+                          borderBottom: `1px solid ${COLORS.border}22`,
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = `${COLORS.blue}12`}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div style={{ fontWeight: 700 }}>{ref.name}</div>
+                        <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {compound && <span>{getCompoundDisplayName(compound)}</span>}
+                          {ref.trackName && <span>📍 {ref.trackName}</span>}
+                          <span style={{ color: COLORS.green }}>
+                            FL {ref.fl || '—'} · FR {ref.fr || '—'} · RL {ref.rl || '—'} · RR {ref.rr || '—'} psi
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleReset}
+              style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                background: 'transparent', border: `1px solid ${COLORS.border}`, color: COLORS.textMuted,
+              }}>
+              Limpar
+            </button>
+          </div>
+        </div>
+
+        {/* Grid de pressões — 4 colunas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+          {TYRE_POSITIONS.map(pos => {
+            const corner = tyres[pos.key] || {};
+            const hasCold  = corner.cold  !== '' && corner.cold  !== undefined;
+            const hasHot   = corner.hot   !== '' && corner.hot   !== undefined;
+            const hasIdeal = corner.ideal !== '' && corner.ideal !== undefined;
+            const pressMin = parseFloat(regLimits.pressaoMin);
+            const coldVal  = parseFloat(corner.cold);
+            const violaPressao = hasCold && !isNaN(pressMin) && pressMin > 0 && coldVal < pressMin;
+            return (
+              <div key={pos.key} style={{
+                background: `${COLORS.bgCard}80`,
+                border: `1px solid ${violaPressao ? '#ff444488' : COLORS.border}`,
+                borderRadius: 10,
+                padding: '12px',
+              }}>
+                {/* Cabeçalho da posição */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginBottom: 10, borderBottom: `1px solid ${COLORS.border}33`, paddingBottom: 8 }}>
+                  <span style={{ fontSize: 20, fontWeight: 900, color: COLORS.textPrimary, letterSpacing: '-0.5px' }}>{pos.label}</span>
+                  <span style={{ fontSize: 10, color: COLORS.textMuted }}>{pos.fullLabel}</span>
+                  {violaPressao && (
+                    <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 700, color: '#ff4444', background: '#ff444415', borderRadius: 4, padding: '1px 5px' }}>
+                      ⚠ &lt; {regLimits.pressaoMin} PSI
+                    </span>
+                  )}
+                </div>
+                {/* Campos */}
+                {[
+                  { field: 'cold',  label: 'Fria  (Pf)', placeholder: 'Ex: 27.5', color: COLORS.blue,   filled: hasCold  },
+                  { field: 'hot',   label: 'Quente (Pq)', placeholder: 'Ex: 30.5', color: COLORS.orange, filled: hasHot   },
+                  { field: 'ideal', label: 'Ideal  (T)',  placeholder: 'Ex: 29.5', color: COLORS.green,  filled: hasIdeal },
+                ].map(({ field, label, placeholder, color, filled }) => (
+                  <div key={field} style={{ marginBottom: 7 }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, color, textTransform: 'uppercase',
+                      letterSpacing: '0.8px', marginBottom: 3,
+                    }}>{label}</div>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={corner[field] || ''}
+                      onChange={e => updateTyre(pos.key, field, e.target.value)}
+                      placeholder={placeholder}
+                      style={{
+                        ...INPUT_STYLE,
+                        padding: '5px 8px',
+                        fontSize: 13,
+                        fontWeight: filled ? 700 : 400,
+                        borderColor: filled ? `${color}70` : COLORS.border,
+                        color: filled ? color : COLORS.textSecondary,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Tabela TEV */}
+        {hasTEV ? (
+          <div style={{ borderRadius: 8, overflow: 'hidden', border: `1px solid ${COLORS.border}` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: `${COLORS.bgCard}` }}>
+                  {[
+                    { label: 'Posição',         color: COLORS.textMuted  },
+                    { label: 'T — Ideal (psi)', color: COLORS.green      },
+                    { label: 'E = T − Pq',      color: COLORS.orange     },
+                    { label: 'V = Pq − Pf',     color: COLORS.blue       },
+                  ].map(({ label, color }) => (
+                    <th key={label} style={{
+                      padding: '9px 14px', textAlign: label === 'Posição' ? 'left' : 'center',
+                      fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.8px',
+                    }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tevRows.map(({ pos, t, eVal, vVal }, i) => {
+                  const eAbs  = eVal !== null ? Math.abs(eVal) : null;
+                  const eColor = eAbs === null ? COLORS.textMuted
+                    : eAbs < 0.75 ? COLORS.green
+                    : eAbs < 2.0  ? COLORS.yellow
+                    : COLORS.accent;
+                  const eIcon  = eAbs === null ? '' : eAbs < 0.75 ? ' ✓' : eAbs < 2.0 ? ' ⚠' : ' ✕';
+                  return (
+                    <tr key={pos.key} style={{
+                      background: i % 2 === 0 ? 'transparent' : `${COLORS.bgCard}50`,
+                      borderTop: `1px solid ${COLORS.border}22`,
+                    }}>
+                      <td style={{ padding: '9px 14px' }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, marginRight: 6 }}>{pos.label}</span>
+                        <span style={{ fontSize: 11, color: COLORS.textMuted }}>{pos.fullLabel}</span>
+                      </td>
+                      <td style={{ padding: '9px 14px', textAlign: 'center', fontWeight: 700, color: t !== null ? COLORS.green : COLORS.textMuted }}>
+                        {t !== null ? `${t.toFixed(1)} psi` : '—'}
+                      </td>
+                      <td style={{ padding: '9px 14px', textAlign: 'center', fontWeight: 700, color: eColor }}>
+                        {eVal !== null
+                          ? `${eVal >= 0 ? '+' : ''}${eVal.toFixed(2)} psi${eIcon}`
+                          : <span style={{ color: COLORS.textMuted }}>—</span>}
+                      </td>
+                      <td style={{ padding: '9px 14px', textAlign: 'center', fontWeight: 700, color: vVal !== null ? COLORS.blue : COLORS.textMuted }}>
+                        {vVal !== null ? `${vVal.toFixed(2)} psi` : '—'}
+                      </td>
+                    </tr>
                   );
                 })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{
+            textAlign: 'center', padding: '14px 0', fontSize: 12,
+            color: COLORS.textMuted, borderTop: `1px solid ${COLORS.border}22`,
+          }}>
+            Preencha as pressões acima para calcular a tabela TEV automaticamente.
+          </div>
+        )}
+      </div>
 
       {/* ── Inventário de Pneus ── */}
       <div style={theme.card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={theme.cardTitle}>📦 Inventário de Pneus</div>
-          {totalSets > 0 && (
-            <div style={{
-              fontSize: 12, color: COLORS.green, fontWeight: 700,
-              background: `${COLORS.green}18`, padding: '3px 12px', borderRadius: 20,
-              border: `1px solid ${COLORS.green}40`,
-            }}>
-              {totalSets} pneu{totalSets !== 1 ? 's' : ''} disponíve{totalSets !== 1 ? 'is' : 'l'}
-            </div>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showInventory ? 14 : 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={theme.cardTitle}>📦 Inventário de Pneus</div>
+            {totalSets > 0 && (
+              <div style={{
+                fontSize: 12, color: COLORS.green, fontWeight: 700,
+                background: `${COLORS.green}18`, padding: '3px 12px', borderRadius: 20,
+                border: `1px solid ${COLORS.green}40`,
+              }}>
+                {totalSets} pneu{totalSets !== 1 ? 's' : ''} disponíve{totalSets !== 1 ? 'is' : 'l'}
+              </div>
+            )}
+          </div>
+          <button onClick={() => setShowInventory((v) => !v)}
+            style={{ fontSize: 11, color: COLORS.textMuted, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+            {showInventory ? '▲ Recolher' : '▼ Expandir'}
+          </button>
         </div>
 
+        {showInventory && (<>
         {inventory.length > 0 && (
           <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
             <div style={{
@@ -1248,17 +1567,23 @@ export default function PneusTab({
               <div
                 key={row.id}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 70px 90px 1fr 36px',
-                  gap: 8, padding: '6px 10px', alignItems: 'center',
                   background: idx % 2 === 0 ? 'transparent' : `${COLORS.bgCard}50`,
                   borderBottom: idx < inventory.length - 1 ? `1px solid ${COLORS.border}22` : 'none',
                 }}
               >
-                <input type="text" value={row.compound}
-                  onChange={(e) => updateInventoryRow(row.id, 'compound', e.target.value)}
-                  placeholder="Ex: Slick — Avon A19"
-                  style={{ ...INPUT_STYLE, padding: '5px 8px', fontSize: 12 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 1fr 36px', gap: 8, padding: '6px 10px', alignItems: 'center' }}>
+                <select
+                  value={row.compoundId || ''}
+                  onChange={(e) => updateInventoryRow(row.id, 'compoundId', e.target.value)}
+                  style={{ ...SELECT_STYLE, padding: '5px 8px', fontSize: 12 }}>
+                  <option value="">— Selecionar —</option>
+                  {compoundLibrary.map(c => (
+                    <option key={c.id} value={c.id}>{getCompoundDisplayName(c)}</option>
+                  ))}
+                  {row.compound && !row.compoundId && (
+                    <option value="" disabled>{row.compound}</option>
+                  )}
+                </select>
                 <input type="number" min="0" max="99" step="1" value={row.qty}
                   onChange={(e) => updateInventoryRow(row.id, 'qty', e.target.value)}
                   placeholder="4"
@@ -1280,6 +1605,52 @@ export default function PneusTab({
                   ×
                 </button>
               </div>
+              {/* Km integrado por conjunto */}
+              <div style={{ padding: '6px 10px 10px', borderTop: `1px solid ${COLORS.border}22` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: COLORS.textMuted }}>
+                    📏 Km acumulado: <b style={{ color: getTotalKm(row) > 0 ? COLORS.green : COLORS.textMuted }}>{getTotalKm(row).toFixed(1)} km</b>
+                  </span>
+                  <button onClick={() => setEntryRowId(entryRowId === row.id ? null : row.id)}
+                    style={{ fontSize: 10, color: COLORS.blue, background: 'transparent', border: `1px solid ${COLORS.blue}40`, borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}>
+                    {entryRowId === row.id ? '▲ Fechar' : '+ Adicionar km'}
+                  </button>
+                </div>
+                {/* Entradas de km existentes */}
+                {(row.kmEntries || []).length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {(row.kmEntries || []).map(entry => (
+                      <div key={entry.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: COLORS.textMuted, padding: '2px 0', borderBottom: `1px solid ${COLORS.border}11` }}>
+                        <span>{entry.event || entry.date || '—'}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <b style={{ color: COLORS.textSecondary }}>{entry.km} km</b>
+                          <button onClick={() => deleteKmEntry(row.id, entry.id)}
+                            style={{ background: 'transparent', border: 'none', color: COLORS.accent, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>×</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Formulário de nova entrada km */}
+                {entryRowId === row.id && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 4 }}>
+                    <input type="number" step="0.1" min="0" value={entryKm}
+                      onChange={e => setEntryKm(e.target.value)}
+                      placeholder="Km" style={{ ...INPUT_STYLE, width: 80, padding: '4px 8px', fontSize: 12 }} />
+                    <input type="text" value={entryEvent}
+                      onChange={e => setEntryEvent(e.target.value)}
+                      placeholder="Evento / sessão" style={{ ...INPUT_STYLE, flex: 1, minWidth: 120, padding: '4px 8px', fontSize: 12 }} />
+                    <input type="date" value={entryDate}
+                      onChange={e => setEntryDate(e.target.value)}
+                      style={{ ...INPUT_STYLE, width: 130, padding: '4px 8px', fontSize: 12 }} />
+                    <button onClick={() => addKmEntry(row.id)}
+                      style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: `${COLORS.blue}18`, color: COLORS.blue, border: `1px solid ${COLORS.blue}40`, cursor: 'pointer' }}>
+                      Adicionar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             ))}
           </div>
         )}
@@ -1298,13 +1669,14 @@ export default function PneusTab({
           }}>
           + Adicionar conjunto
         </button>
+        </>)}
       </div>
 
       {/* ── Biblioteca de Compostos ── */}
       <div style={theme.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showLibrary ? 14 : 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={theme.cardTitle}>📚 Biblioteca de Compostos</div>
+            <div style={theme.cardTitle}>📚 Biblioteca de Pneus</div>
             {compoundLibrary.length > 0 && (
               <span style={{ fontSize: 11, color: COLORS.textMuted }}>
                 ({compoundLibrary.length} {compoundLibrary.length === 1 ? 'composto' : 'compostos'})
@@ -1329,7 +1701,7 @@ export default function PneusTab({
                       borderRadius: 10, overflow: 'hidden',
                     }}>
                       {/* Cabeçalho */}
-                      <div onClick={() => setExpandedCompound(isExp ? null : entry.id)}
+                      <div onClick={() => { if (editingCompoundId !== entry.id) setExpandedCompound(isExp ? null : entry.id); }}
                         style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                           padding: '10px 14px', cursor: 'pointer',
@@ -1337,7 +1709,46 @@ export default function PneusTab({
                           borderBottom: isExp ? `1px solid ${COLORS.border}33` : 'none',
                         }}>
                         <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 13, fontWeight: 700 }}>{getCompoundDisplayName(entry)}</span>
+                          {editingCompoundId === entry.id ? (
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editingCompoundDraft}
+                              onChange={(e) => setEditingCompoundDraft(e.target.value)}
+                              onBlur={() => {
+                                updateCompoundField(entry.id, 'nomeCustom', editingCompoundDraft.trim());
+                                setEditingCompoundId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateCompoundField(entry.id, 'nomeCustom', editingCompoundDraft.trim());
+                                  setEditingCompoundId(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingCompoundId(null);
+                                }
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                fontSize: 13, fontWeight: 700, background: 'transparent',
+                                border: 'none', borderBottom: `1px solid ${COLORS.blue}`,
+                                color: COLORS.textPrimary, outline: 'none', width: '100%',
+                                padding: '0 0 2px',
+                              }}
+                            />
+                          ) : (
+                            <span
+                              style={{ fontSize: 13, fontWeight: 700 }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCompoundDraft(getCompoundDisplayName(entry));
+                                setEditingCompoundId(entry.id);
+                              }}
+                              title="Duplo clique para renomear"
+                            >
+                              {getCompoundDisplayName(entry)}
+                            </span>
+                          )}
                           <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
                             {entry.largura && entry.perfil && entry.diametro && (
                               <span style={{ fontSize: 10, color: COLORS.textMuted }}>{entry.largura}/{entry.perfil}R{entry.diametro}</span>
@@ -1425,22 +1836,22 @@ export default function PneusTab({
                               <Field label="Pressão Fria de Trabalho (PSI)" textMuted={COLORS.textMuted}>
                                 <input type="number" step="0.5" value={entry.pressaoFria}
                                   onChange={(e) => updateCompoundField(entry.id, 'pressaoFria', e.target.value)}
-                                  placeholder="—" style={INPUT_STYLE} />
+                                  placeholder="Ex: 26" style={INPUT_STYLE} />
                               </Field>
                               <Field label="Pressão Quente de Trabalho (PSI)" textMuted={COLORS.textMuted}>
                                 <input type="number" step="0.5" value={entry.pressaoQuente}
                                   onChange={(e) => updateCompoundField(entry.id, 'pressaoQuente', e.target.value)}
-                                  placeholder="—" style={INPUT_STYLE} />
+                                  placeholder="Ex: 30" style={INPUT_STYLE} />
                               </Field>
                               <Field label="Temp. Mínima de Operação (°C)" labelColor={COLORS.blue} textMuted={COLORS.textMuted}>
                                 <input type="number" step="1" value={entry.tempMinOp}
                                   onChange={(e) => updateCompoundField(entry.id, 'tempMinOp', e.target.value)}
-                                  placeholder="—" style={INPUT_STYLE} />
+                                  placeholder="Ex: 70" style={INPUT_STYLE} />
                               </Field>
                               <Field label="Temp. Máxima de Operação (°C)" labelColor={COLORS.orange} textMuted={COLORS.textMuted}>
                                 <input type="number" step="1" value={entry.tempMaxOp}
                                   onChange={(e) => updateCompoundField(entry.id, 'tempMaxOp', e.target.value)}
-                                  placeholder="—" style={INPUT_STYLE} />
+                                  placeholder="Ex: 110" style={INPUT_STYLE} />
                               </Field>
                             </div>
                           </div>
@@ -1465,7 +1876,7 @@ export default function PneusTab({
                                   return bestDeg.toFixed(1);
                                 })()}
                                 onChange={(e) => updateCompoundField(entry.id, 'slipAngleOtimo', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 8" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Slip Ratio Ótimo (%)" textMuted={COLORS.textMuted}>
                               <input type="number" step="0.1"
@@ -1483,32 +1894,32 @@ export default function PneusTab({
                                   return bestPct.toFixed(1);
                                 })()}
                                 onChange={(e) => updateCompoundField(entry.id, 'slipRatioOtimo', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 12" style={INPUT_STYLE} />
                             </Field>
                             <Field label="μ Longitudinal" textMuted={COLORS.textMuted}>
                               <input type="number" step="0.01" value={entry.muLong}
                                 onChange={(e) => updateCompoundField(entry.id, 'muLong', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 1.6" style={INPUT_STYLE} />
                             </Field>
                             <Field label="μ Lateral" textMuted={COLORS.textMuted}>
                               <input type="number" step="0.01" value={entry.muLat}
                                 onChange={(e) => updateCompoundField(entry.id, 'muLat', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 1.5" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Rigidez Cornering CN (N/°)" textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.corneringStiffness}
                                 onChange={(e) => updateCompoundField(entry.id, 'corneringStiffness', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 850" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Camber Thrust (N/°)" textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.camberThrust}
                                 onChange={(e) => updateCompoundField(entry.id, 'camberThrust', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 120" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Self-aligning Torque Mz (ref.)" textMuted={COLORS.textMuted}>
                               <input type="number" step="0.1" value={entry.mzRef}
                                 onChange={(e) => updateCompoundField(entry.id, 'mzRef', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 45" style={INPUT_STYLE} />
                             </Field>
                           </div>
                           </div>
@@ -1520,12 +1931,12 @@ export default function PneusTab({
                             <Field label="Temperatura de Pico / Cliff (°C)" labelColor={COLORS.accent} textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.tempPico}
                                 onChange={(e) => updateCompoundField(entry.id, 'tempPico', e.target.value)}
-                                placeholder="—" style={{ ...INPUT_STYLE, borderColor: `${COLORS.accent}60` }} />
+                                placeholder="Ex: 100" style={{ ...INPUT_STYLE, borderColor: `${COLORS.accent}60` }} />
                             </Field>
                             <Field label="Voltas de Vida Útil" textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.voltasUteis}
                                 onChange={(e) => updateCompoundField(entry.id, 'voltasUteis', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 20" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Degradação (s/volta)" labelColor={COLORS.cyan} textMuted={COLORS.textMuted}>
                               <input type="number" step="0.01" value={entry.degradacaoSPorVolta}
@@ -1555,27 +1966,27 @@ export default function PneusTab({
                             <Field label="Temp. Risco de Graining (°C)" labelColor={COLORS.yellow} textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.tempGraining}
                                 onChange={(e) => updateCompoundField(entry.id, 'tempGraining', e.target.value)}
-                                placeholder="—" style={{ ...INPUT_STYLE, borderColor: `${COLORS.yellow}60` }} />
+                                placeholder="Ex: 65" style={{ ...INPUT_STYLE, borderColor: `${COLORS.yellow}60` }} />
                             </Field>
                             <Field label="Temp. Risco de Blistering (°C)" labelColor={COLORS.accent} textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.tempBlistering}
                                 onChange={(e) => updateCompoundField(entry.id, 'tempBlistering', e.target.value)}
-                                placeholder="—" style={{ ...INPUT_STYLE, borderColor: `${COLORS.accent}60` }} />
+                                placeholder="Ex: 115" style={{ ...INPUT_STYLE, borderColor: `${COLORS.accent}60` }} />
                             </Field>
                             <Field label="Tire Stagger (mm)" textMuted={COLORS.textMuted}>
                               <input type="number" step="0.1" value={entry.stagger}
                                 onChange={(e) => updateCompoundField(entry.id, 'stagger', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 3" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Rigidez Carcaça Lateral (N/mm)" textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.carcassLateral}
                                 onChange={(e) => updateCompoundField(entry.id, 'carcassLateral', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 180" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Rigidez Carcaça Radial (N/mm)" textMuted={COLORS.textMuted}>
                               <input type="number" step="1" value={entry.carcassRadial}
                                 onChange={(e) => updateCompoundField(entry.id, 'carcassRadial', e.target.value)}
-                                placeholder="—" style={INPUT_STYLE} />
+                                placeholder="Ex: 250" style={INPUT_STYLE} />
                             </Field>
                             <Field label="Degradação Térmica (%/°C acima do cliff)" labelColor={COLORS.accent} textMuted={COLORS.textMuted}>
                               <input type="number" step="0.1" value={entry.degradacaoTermica}
@@ -1628,6 +2039,26 @@ export default function PneusTab({
                             COLORS={COLORS}
                             INPUT_STYLE={INPUT_STYLE}
                           />
+
+                          {/* ── Botão Salvar ── */}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
+                            {savedFeedbackId === entry.id ? (
+                              <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.green, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                ✓ Salvo!
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => saveCompoundFeedback(entry.id)}
+                                style={{
+                                  padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 700,
+                                  background: COLORS.green, color: '#fff',
+                                  border: 'none', cursor: 'pointer',
+                                }}
+                              >
+                                Salvar composto
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1638,7 +2069,7 @@ export default function PneusTab({
 
             {compoundLibrary.length === 0 && (
               <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>
-                Registre as especificações dos compostos utilizados. Esses dados ficam salvos por perfil e servem como referência para o Comparativo de Saídas.
+                Registre as especificações dos pneus utilizados. Esses dados são globais e servem como referência para todas as saídas.
               </div>
             )}
 
@@ -1648,409 +2079,10 @@ export default function PneusTab({
                 background: `${COLORS.blue}15`, color: COLORS.blue,
                 border: `1px solid ${COLORS.blue}40`, cursor: 'pointer',
               }}>
-              + Adicionar composto
+              + Adicionar pneu
             </button>
           </>
         )}
-      </div>
-
-      {/* ── Composto e Pressões ── */}
-      <div style={{ ...theme.card, background: COLORS.bgCard }}>
-        <div style={theme.cardTitle}>🏎️ Dados dos Pneus</div>
-
-        {/* Composto */}
-        <div style={{ marginBottom: 20 }}>
-          <Field label="Composto" textMuted={COLORS.textMuted}>
-            <select
-              value={tyres.compound}
-              onChange={(e) => { setTyres((p) => ({ ...p, compound: e.target.value })); setSaved(false); }}
-              style={SELECT_STYLE}
-            >
-              {COMPOUND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {tyres.compound === 'other' && (
-              <input type="text" value={tyres.compoundOther}
-                onChange={(e) => { setTyres((p) => ({ ...p, compoundOther: e.target.value })); setSaved(false); }}
-                placeholder="Descreva o composto..."
-                style={{ ...INPUT_STYLE, marginTop: 8 }} />
-            )}
-          </Field>
-        </div>
-
-        {/* Pressões por posição */}
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>
-          Pressões (psi) — Pf = fria antes de sair · Pq = quando o carro volta · T = pressão ideal
-        </div>
-
-        {/* Diagrama visual do carro */}
-        <div style={{
-          display: 'grid',
-          gridTemplateAreas: '"fl fr" "rl rr"',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 12,
-          maxWidth: 680,
-          margin: '0 auto 8px',
-        }}>
-          {TYRE_POSITIONS.map((pos) => (
-            <div key={pos.key} style={{
-              gridArea: pos.key,
-              background: `${COLORS.bgCard}`,
-              border: `1px solid ${COLORS.borderLight}`,
-              borderRadius: 10,
-              padding: '12px 16px',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.green, marginBottom: 8 }}>
-                {pos.label}
-                <span style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 400, marginLeft: 6 }}>
-                  {pos.fullLabel}
-                </span>
-              </div>
-
-              {/* Pf + Pq */}
-              <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <Label>Pf — Fria (psi)</Label>
-                  <input type="number" step="0.5" min="0" max="80"
-                    value={tyres[pos.key]?.cold || ''}
-                    onChange={(e) => updateTyre(pos.key, 'cold', e.target.value)}
-                    placeholder="—" style={INPUT_STYLE} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <Label>Pq — Volta (psi)</Label>
-                  <input type="number" step="0.5" min="0" max="80"
-                    value={tyres[pos.key]?.hot || ''}
-                    onChange={(e) => updateTyre(pos.key, 'hot', e.target.value)}
-                    placeholder="—" style={INPUT_STYLE} />
-                </div>
-              </div>
-
-              {/* Ideal (T) */}
-              <div style={{ marginBottom: 10 }}>
-                <Label color={COLORS.purple} textMuted={COLORS.textMuted}>T — Ideal (psi)</Label>
-                <input type="number" step="0.5" min="0" max="80"
-                  value={tyres[pos.key]?.ideal || ''}
-                  onChange={(e) => updateTyre(pos.key, 'ideal', e.target.value)}
-                  placeholder="—"
-                  style={{ ...INPUT_STYLE, borderColor: `${COLORS.purple}60` }} />
-              </div>
-
-              {/* Temperatura por zona */}
-              <div style={{ borderTop: `1px solid ${COLORS.border}30`, paddingTop: 8 }}>
-                <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Temp. Zona (°C) — Int / Cen / Ext
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                  {[
-                    { field: 'zoneInner',  label: 'Int.' },
-                    { field: 'zoneCenter', label: 'Cen.' },
-                    { field: 'zoneOuter',  label: 'Ext.' },
-                  ].map(({ field, label }) => (
-                    <div key={field}>
-                      <label style={{ fontSize: 9, color: COLORS.textMuted, display: 'block', marginBottom: 2, textTransform: 'uppercase' }}>
-                        {label}
-                      </label>
-                      <input type="number" step="1"
-                        value={tyres[pos.key]?.[field] || ''}
-                        onChange={(e) => updateTyre(pos.key, field, e.target.value)}
-                        placeholder="°C"
-                        style={{ ...INPUT_STYLE, padding: '4px 6px', fontSize: 11 }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tabela T / E / V */}
-        {hasTEV && (
-          <div style={{
-            marginTop: 16,
-            background: `${COLORS.bgCard}`,
-            border: `1px solid ${COLORS.borderLight}`,
-            borderRadius: 10,
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              display: 'grid', gridTemplateColumns: '60px 1fr 1fr 1fr',
-              background: `${COLORS.purple}18`, borderBottom: `1px solid ${COLORS.purple}30`,
-              padding: '8px 14px',
-            }}>
-              {['Pneu', 'T (psi)', 'E = T − Pq', 'V = Pq − Pf'].map((h) => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 700, color: COLORS.purple }}>{h}</div>
-              ))}
-            </div>
-
-            {tevRows.map((row, i) => (
-              <div key={row.pos.key} style={{
-                display: 'grid', gridTemplateColumns: '60px 1fr 1fr 1fr',
-                padding: '9px 14px',
-                borderBottom: i < tevRows.length - 1 ? `1px solid ${COLORS.border}22` : 'none',
-                alignItems: 'center',
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.green }}>{row.pos.label}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>
-                  {row.t !== null ? row.t.toFixed(2) : <span style={{ color: COLORS.textMuted }}>—</span>}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: row.eVal !== null ? colorE(row.eVal, COLORS) : COLORS.textMuted }}>
-                  {row.eVal !== null
-                    ? <>{fmtDelta(row.eVal)} <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>psi</span></>
-                    : '—'}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: row.vVal !== null ? colorV(row.vVal, COLORS) : COLORS.textMuted }}>
-                  {row.vVal !== null
-                    ? <>{fmtDelta(row.vVal)} <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>psi</span></>
-                    : '—'}
-                </div>
-              </div>
-            ))}
-
-            <div style={{
-              padding: '7px 14px', background: `${COLORS.bg}80`,
-              borderTop: `1px solid ${COLORS.border}22`,
-              display: 'flex', gap: 18, flexWrap: 'wrap',
-            }}>
-              <span style={{ fontSize: 10, color: COLORS.textMuted }}>
-                <b style={{ color: COLORS.purple }}>T</b> = Pressão Ideal &nbsp;|&nbsp;
-                <b style={{ color: COLORS.purple }}>Pf</b> = Fria (antes de sair) &nbsp;|&nbsp;
-                <b style={{ color: COLORS.purple }}>Pq</b> = Quando o carro volta
-              </span>
-              <span style={{ fontSize: 10, color: COLORS.textMuted }}>
-                <b style={{ color: COLORS.purple }}>E</b> = T − Pq
-                &nbsp;·&nbsp;<span style={{ color: COLORS.green }}>±0–0.75 psi</span> ótimo
-                {' · '}<span style={{ color: COLORS.yellow }}>0.75–2.0 psi</span> aceitável
-                {' · '}<span style={{ color: COLORS.accent }}>&gt;2.0 psi</span> atenção
-              </span>
-              <span style={{ fontSize: 10, color: COLORS.textMuted }}>
-                <b style={{ color: COLORS.purple }}>V</b> = Pq − Pf &nbsp;(build-up de pressão)
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Resumo de variação cold→hot */}
-        {TYRE_POSITIONS.some((p) => tyres[p.key]?.cold && tyres[p.key]?.hot) && (
-          <div style={{
-            marginTop: 12, padding: '10px 14px',
-            background: `${COLORS.purple}10`, border: `1px solid ${COLORS.purple}30`, borderRadius: 8,
-          }}>
-            <div style={{ fontSize: 11, color: COLORS.purple, fontWeight: 700, marginBottom: 8 }}>
-              Δ Pressão (Pf → Pq)
-            </div>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              {TYRE_POSITIONS.map((pos) => {
-                const cold = parseFloat(tyres[pos.key]?.cold);
-                const hot  = parseFloat(tyres[pos.key]?.hot);
-                if (isNaN(cold) || isNaN(hot)) return null;
-                const delta = (hot - cold).toFixed(2);
-                const ok    = hot - cold >= 1.5 && hot - cold <= 7.0;
-                return (
-                  <div key={pos.key} style={{ fontSize: 12 }}>
-                    <span style={{ color: COLORS.textMuted }}>{pos.label}: </span>
-                    <span style={{ color: ok ? COLORS.green : COLORS.yellow, fontWeight: 700 }}>
-                      +{delta} psi {ok ? '✓' : '⚠'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6 }}>
-              Referência ideal: +1.5 a +7.0 psi de build-up de pressão a quente
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Condições Ambientais ── */}
-      <div style={theme.card}>
-        <div style={theme.cardTitle}>🌡️ Condições da Pista e Ambiente</div>
-
-        {/* ── Box de importação do log de temperatura ── */}
-        <div style={{
-          marginBottom: 16, padding: '12px 14px',
-          background: `${COLORS.orange}0d`, border: `1px solid ${COLORS.orange}30`, borderRadius: 8,
-        }}>
-          <span style={{ fontSize: 12, color: COLORS.orange, fontWeight: 600, display: 'block', marginBottom: 10 }}>
-            🕐 Importar do registro de temperatura
-          </span>
-          {profileTempLog.length === 0 ? (
-            <span style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: 'italic' }}>
-              Nenhum registro encontrado no Tab Temperatura. Adicione registros lá para importar aqui.
-            </span>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, minWidth: 90 }}>Hora Inicial:</span>
-                <select defaultValue="" onChange={(e) => {
-                  const entry = profileTempLog.find((x) => x.id === e.target.value);
-                  if (!entry) return;
-                  setConditions((prev) => ({
-                    ...prev,
-                    trackTemp:   entry.track    != null ? String(entry.track)    : prev.trackTemp,
-                    ambientTemp: entry.ambient  != null ? String(entry.ambient)  : prev.ambientTemp,
-                    humidity:    entry.humidity != null ? String(entry.humidity) : prev.humidity,
-                    horaInicial: entry.time     ? entry.time.substring(0, 5)     : prev.horaInicial,
-                  }));
-                  setSaved(false);
-                  e.target.value = '';
-                }} style={{ ...SELECT_STYLE, flex: '1 1 200px' }}>
-                  <option value="">— Escolher registro —</option>
-                  {profileTempLog.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.date ? entry.date.substring(8,10) + '/' + entry.date.substring(5,7) + ' ' : ''}
-                      {entry.time}
-                      {entry.track    != null ? ` · Pista ${entry.track}°C`  : ''}
-                      {entry.ambient  != null ? ` · Amb. ${entry.ambient}°C` : ''}
-                      {entry.humidity != null ? ` · ${entry.humidity}%`      : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 600, minWidth: 90 }}>Hora Final:</span>
-                <select defaultValue="" onChange={(e) => {
-                  const entry = profileTempLog.find((x) => x.id === e.target.value);
-                  if (!entry) return;
-                  setConditions((prev) => ({
-                    ...prev,
-                    trackTempFinal:   entry.track    != null ? String(entry.track)    : prev.trackTempFinal,
-                    ambientTempFinal: entry.ambient  != null ? String(entry.ambient)  : prev.ambientTempFinal,
-                    humidityFinal:    entry.humidity != null ? String(entry.humidity) : prev.humidityFinal,
-                    horaFinal:        entry.time     ? entry.time.substring(0, 5)     : prev.horaFinal,
-                  }));
-                  setSaved(false);
-                  e.target.value = '';
-                }} style={{ ...SELECT_STYLE, flex: '1 1 200px' }}>
-                  <option value="">— Escolher registro —</option>
-                  {profileTempLog.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.date ? entry.date.substring(8,10) + '/' + entry.date.substring(5,7) + ' ' : ''}
-                      {entry.time}
-                      {entry.track    != null ? ` · Pista ${entry.track}°C`  : ''}
-                      {entry.ambient  != null ? ` · Amb. ${entry.ambient}°C` : ''}
-                      {entry.humidity != null ? ` · ${entry.humidity}%`      : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Tabela Inicial / Final / Δ ── */}
-        <div style={{ marginBottom: 16, overflowX: 'auto' }}>
-          <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13 }}>
-            <colgroup>
-              <col style={{ width: '32%' }} />
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '16%' }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '6px 8px', color: COLORS.textMuted, fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}></th>
-                <th style={{ textAlign: 'center', padding: '6px 4px', color: COLORS.accent,    fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Inicial</th>
-                <th style={{ textAlign: 'center', padding: '6px 4px', color: COLORS.orange,   fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Final</th>
-                <th style={{ textAlign: 'center', padding: '6px 4px', color: COLORS.textMuted, fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { label: 'Temp. Pista (°C)',    ini: 'trackTemp',   fin: 'trackTempFinal',   unit: '°C', xtKey: 'trackTemp' },
-                { label: 'Temp. Ambiente (°C)', ini: 'ambientTemp', fin: 'ambientTempFinal', unit: '°C', xtKey: 'ambientTemp' },
-                { label: 'Humidade (%)',         ini: 'humidity',    fin: 'humidityFinal',    unit: '%',  xtKey: 'humidity' },
-                { label: 'Horário',             ini: 'horaInicial', fin: 'horaFinal',        unit: null, xtKey: null },
-              ].map(({ label, ini, fin, unit, xtKey }) => {
-                const vIni = conditions[ini];
-                const vFin = conditions[fin];
-                let delta = null;
-                if (unit && vIni !== '' && vFin !== '') {
-                  delta = (parseFloat(vFin) - parseFloat(vIni));
-                }
-                const isTimeField = unit === null;
-                return (
-                  <tr key={ini} style={{ borderTop: `1px solid ${COLORS.border}20` }}>
-                    <td style={{ padding: '6px 8px', color: COLORS.textMuted, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</td>
-                    <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                      <input
-                        type={isTimeField ? 'time' : 'number'}
-                        step={unit === '%' ? '1' : '0.5'}
-                        min={unit === '%' ? '0' : undefined}
-                        max={unit === '%' ? '100' : undefined}
-                        value={vIni}
-                        onChange={(e) => updateCondition(ini, e.target.value)}
-                        placeholder={xtKey && latestTemp?.[xtKey] ? String(latestTemp[xtKey]) : '—'}
-                        style={{ ...INPUT_STYLE, textAlign: 'center', padding: '5px 4px', width: '100%' }} />
-                    </td>
-                    <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                      <input
-                        type={isTimeField ? 'time' : 'number'}
-                        step={unit === '%' ? '1' : '0.5'}
-                        min={unit === '%' ? '0' : undefined}
-                        max={unit === '%' ? '100' : undefined}
-                        value={vFin}
-                        onChange={(e) => updateCondition(fin, e.target.value)}
-                        placeholder="—"
-                        style={{ ...INPUT_STYLE, textAlign: 'center', padding: '5px 4px', width: '100%' }} />
-                    </td>
-                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                      {delta != null ? (
-                        <span style={{
-                          fontWeight: 700, fontSize: 13,
-                          color: delta > 0 ? COLORS.accent : delta < 0 ? COLORS.blue : COLORS.textMuted,
-                        }}>
-                          {delta > 0 ? '+' : ''}{delta.toFixed(1)}{unit}
-                        </span>
-                      ) : (
-                        <span style={{ color: COLORS.border, fontSize: 12 }}>—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ── Clima / Estado / Notas ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
-          <Field label="Condição Clima" textMuted={COLORS.textMuted}>
-            <select value={conditions.weather}
-              onChange={(e) => updateCondition('weather', e.target.value)}
-              style={SELECT_STYLE}>
-              <option value="">— Selecionar —</option>
-              <option value="dry_sunny">Seco / Sol</option>
-              <option value="dry_cloudy">Seco / Nublado</option>
-              <option value="damp">Meia-pista úmida</option>
-              <option value="wet">Chuva Leve</option>
-              <option value="heavy_rain">Chuva Forte</option>
-            </select>
-          </Field>
-          <Field label="Estado da Pista" textMuted={COLORS.textMuted}>
-            <select value={conditions.trackState}
-              onChange={(e) => updateCondition('trackState', e.target.value)}
-              style={SELECT_STYLE}>
-              {TRACK_STATE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {conditions.trackState === 'other' && (
-              <input type="text" value={conditions.trackStateOther}
-                onChange={(e) => updateCondition('trackStateOther', e.target.value)}
-                placeholder="Descreva o estado da pista..."
-                style={{ ...INPUT_STYLE, marginTop: 8 }} />
-            )}
-          </Field>
-        </div>
-
-        <Field label="Notas adicionais" textMuted={COLORS.textMuted}>
-          <textarea value={conditions.notes}
-            onChange={(e) => updateCondition('notes', e.target.value)}
-            placeholder="Ex: pista com borracha nova no setor 2, correntes frias nas curvas 3 e 7..."
-            rows={3} style={{ ...INPUT_STYLE, resize: 'vertical', fontFamily: 'inherit' }} />
-        </Field>
       </div>
 
       {/* ── Comparativo de Saídas ── */}
@@ -2125,6 +2157,93 @@ export default function PneusTab({
                 </Field>
               )}
             </div>
+
+            {/* Pista e Condições */}
+            <div style={{ background: `${COLORS.blue}08`, border: `1px solid ${COLORS.blue}25`, borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.blue, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 10 }}>Pista &amp; Condições</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <Field label="Pista" textMuted={COLORS.textMuted}>
+                  <select value={newStint.trackId || ''}
+                    onChange={e => {
+                      const t = TRACK_DATABASE.find(x => x.id === e.target.value);
+                      setNewStint(p => ({ ...p, trackId: e.target.value, trackName: t?.name || '' }));
+                    }}
+                    style={SELECT_STYLE}>
+                    <option value="">— Selecionar —</option>
+                    {TRACK_DATABASE.map(t => (
+                      <option key={t.id} value={t.id}>{t.flag ? t.flag + ' ' : ''}{t.shortName || t.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Clima" textMuted={COLORS.textMuted}>
+                  <select value={newStint.weather || ''}
+                    onChange={e => setNewStint(p => ({ ...p, weather: e.target.value }))}
+                    style={SELECT_STYLE}>
+                    <option value="">— Selecionar —</option>
+                    <option value="dry_sunny">Seco / Sol</option>
+                    <option value="dry_cloudy">Seco / Nublado</option>
+                    <option value="damp">Meia-pista úmida</option>
+                    <option value="wet">Chuva Leve</option>
+                    <option value="heavy_rain">Chuva Forte</option>
+                  </select>
+                </Field>
+                <Field label="Estado da Pista" textMuted={COLORS.textMuted}>
+                  <select value={newStint.trackState || ''}
+                    onChange={e => setNewStint(p => ({ ...p, trackState: e.target.value }))}
+                    style={SELECT_STYLE}>
+                    <option value="">— Selecionar —</option>
+                    <option value="seca">Seca</option>
+                    <option value="umida">Úmida</option>
+                    <option value="inter">Intermediária</option>
+                    <option value="other">Outro</option>
+                  </select>
+                </Field>
+                <Field label="Humidade (%)" textMuted={COLORS.textMuted}>
+                  <input type="number" step="1" min="0" max="100" value={newStint.humidity || ''}
+                    onChange={e => setNewStint(p => ({ ...p, humidity: e.target.value }))}
+                    placeholder="Ex: 65" style={INPUT_STYLE} />
+                </Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[
+                  { label: 'Temp. Pista Ini. (°C)', f: 'trackTemp',        color: COLORS.accent },
+                  { label: 'Temp. Pista Fin. (°C)', f: 'trackTempFinal',   color: COLORS.accent },
+                  { label: 'Temp. Amb. Ini. (°C)',  f: 'ambientTemp',      color: COLORS.orange },
+                  { label: 'Temp. Amb. Fin. (°C)',  f: 'ambientTempFinal', color: COLORS.orange },
+                ].map(({ label, f, color }) => (
+                  <Field key={f} label={label} labelColor={color} textMuted={COLORS.textMuted}>
+                    <input type="number" step="0.5" value={newStint[f] || ''}
+                      onChange={e => setNewStint(p => ({ ...p, [f]: e.target.value }))}
+                      placeholder="—" style={INPUT_STYLE} />
+                  </Field>
+                ))}
+              </div>
+            </div>
+
+            {/* Pressões de Referência — carregar template */}
+            {pressaoRefs.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 5 }}>Carregar pressões de referência:</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {pressaoRefs.map(ref => (
+                    <button key={ref.id} onClick={() => {
+                      const comp = compoundLibrary.find(c => c.id === ref.compoundId);
+                      setNewStint(p => ({
+                        ...p,
+                        compostoId: ref.compoundId || p.compostoId,
+                        pfFL: ref.fl || p.pfFL,
+                        pfFR: ref.fr || p.pfFR,
+                        pfRL: ref.rl || p.pfRL,
+                        pfRR: ref.rr || p.pfRR,
+                      }));
+                    }}
+                    style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, background: `${COLORS.purple}15`, color: COLORS.purple, border: `1px solid ${COLORS.purple}40`, cursor: 'pointer' }}>
+                      {ref.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Pressões frias */}
             <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
@@ -2207,6 +2326,16 @@ export default function PneusTab({
                             {compLabel}
                           </span>
                         )}
+                        {stint.trackName && (
+                          <span style={{ fontSize: 11, background: `${COLORS.blue}18`, color: COLORS.blue, padding: '1px 6px', borderRadius: 4 }}>
+                            📍 {stint.trackName}
+                          </span>
+                        )}
+                        {stint.weather && (
+                          <span style={{ fontSize: 11, background: `${COLORS.border}33`, color: COLORS.textMuted, padding: '1px 6px', borderRadius: 4 }}>
+                            {stint.weather === 'dry_sunny' ? '☀️ Seco' : stint.weather === 'dry_cloudy' ? '🌤 Nublado' : stint.weather === 'damp' ? '🌦 Úmida' : stint.weather === 'wet' ? '🌧 Chuva' : '⛈ Chuva Forte'}
+                          </span>
+                        )}
                         {stint.parcialTroca && (
                           <span style={{ fontSize: 11, background: `${COLORS.yellow}18`, color: COLORS.yellow, padding: '1px 6px', borderRadius: 4 }}>
                             ⚠ Troca parcial{stint.parcialCanto ? ` — ${stint.parcialCanto}` : ''}
@@ -2250,14 +2379,75 @@ export default function PneusTab({
                             style={INPUT_STYLE} />
                         </Field>
                         <Field label="Temp. Pista (°C)" labelColor={COLORS.accent} textMuted={COLORS.textMuted}>
+                          <select
+                            value={stint.trackTempRef || ''}
+                            onChange={(e) => updateStintConditionRef(stint.id, 'trackTemp', e.target.value, profileTempLog)}
+                            style={{ ...SELECT_STYLE, fontSize: 10, padding: '3px 5px', marginBottom: 4 }}
+                          >
+                            <option value="">— Medição (Temp. Tab) —</option>
+                            {(profileTempLog || []).map((entry) => (
+                              <option key={entry.id} value={entry.id}>
+                                {entry.date} {entry.time} — {entry.track}°C
+                              </option>
+                            ))}
+                          </select>
                           <input type="number" step="0.5" value={stint.trackTemp}
                             onChange={(e) => updateStintField(stint.id, 'trackTemp', e.target.value)}
                             placeholder="—" style={INPUT_STYLE} />
                         </Field>
                         <Field label="Temp. Ambiente (°C)" labelColor={COLORS.orange} textMuted={COLORS.textMuted}>
+                          <select
+                            value={stint.ambientTempRef || ''}
+                            onChange={(e) => updateStintConditionRef(stint.id, 'ambientTemp', e.target.value, profileTempLog)}
+                            style={{ ...SELECT_STYLE, fontSize: 10, padding: '3px 5px', marginBottom: 4 }}
+                          >
+                            <option value="">— Medição (Temp. Tab) —</option>
+                            {(profileTempLog || []).map((entry) => (
+                              <option key={entry.id} value={entry.id}>
+                                {entry.date} {entry.time} — {entry.ambient}°C
+                              </option>
+                            ))}
+                          </select>
                           <input type="number" step="0.5" value={stint.ambientTemp}
                             onChange={(e) => updateStintField(stint.id, 'ambientTemp', e.target.value)}
                             placeholder="—" style={INPUT_STYLE} />
+                        </Field>
+                        <Field label="Pista" textMuted={COLORS.textMuted}>
+                          <select value={stint.trackId || ''}
+                            onChange={e => {
+                              const t = TRACK_DATABASE.find(x => x.id === e.target.value);
+                              updateStintField(stint.id, 'trackId', e.target.value);
+                              updateStintField(stint.id, 'trackName', t?.name || '');
+                            }}
+                            style={SELECT_STYLE}>
+                            <option value="">— Selecionar —</option>
+                            {TRACK_DATABASE.map(t => (
+                              <option key={t.id} value={t.id}>{t.flag ? t.flag + ' ' : ''}{t.shortName || t.name}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Clima" textMuted={COLORS.textMuted}>
+                          <select value={stint.weather || ''}
+                            onChange={e => updateStintField(stint.id, 'weather', e.target.value)}
+                            style={SELECT_STYLE}>
+                            <option value="">—</option>
+                            <option value="dry_sunny">Seco / Sol</option>
+                            <option value="dry_cloudy">Seco / Nublado</option>
+                            <option value="damp">Meia-pista úmida</option>
+                            <option value="wet">Chuva Leve</option>
+                            <option value="heavy_rain">Chuva Forte</option>
+                          </select>
+                        </Field>
+                        <Field label="Estado da Pista" textMuted={COLORS.textMuted}>
+                          <select value={stint.trackState || ''}
+                            onChange={e => updateStintField(stint.id, 'trackState', e.target.value)}
+                            style={SELECT_STYLE}>
+                            <option value="">—</option>
+                            <option value="seca">Seca</option>
+                            <option value="umida">Úmida</option>
+                            <option value="inter">Intermediária</option>
+                            <option value="other">Outro</option>
+                          </select>
                         </Field>
                         <Field label="Voltas" textMuted={COLORS.textMuted}>
                           <input type="number" step="1" min="0" value={stint.voltas}
@@ -2320,8 +2510,8 @@ export default function PneusTab({
                       <SectionLabel color={COLORS.textMuted}>Temperatura por Zona (°C) — Interno / Central / Externo</SectionLabel>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
                         {TYRE_POSITIONS.map((pos) => {
-                          const zKey  = `z${pos.key.charAt(0).toUpperCase()}${pos.key.slice(1)}`;
-                          const zone  = stint[zKey] || { inner: '', center: '', outer: '' };
+                          const zKey = `z${pos.key.charAt(0).toUpperCase()}${pos.key.slice(1)}`;
+                          const zone = stint[zKey] || { inner: '', center: '', outer: '' };
                           return (
                             <div key={pos.key}>
                               <label style={{ fontSize: 12, color: COLORS.green, fontWeight: 700, display: 'block', marginBottom: 5 }}>{pos.label}</label>
@@ -2495,298 +2685,126 @@ export default function PneusTab({
         )}
       </div>
 
-      {/* ── Quilometragem dos Pneus ── */}
+      {/* ── Pressões de Referência ── */}
       <div style={theme.card}>
-        <div style={theme.cardTitle}>📏 Quilometragem dos Pneus</div>
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 14 }}>
-          Acompanhe os km acumulados por conjunto. O campo <b style={{ color: COLORS.textSecondary }}>Km Antes</b> no inventário define o ponto de partida; aqui você registra os km de cada sessão.
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div>
+            <div style={theme.cardTitle}>🎯 Pressões de Referência</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+              Templates de pressão ideal por composto e pista — carregáveis diretamente na Nova Saída
+            </div>
+          </div>
+          <button onClick={() => setShowRefForm(v => !v)}
+            style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, background: `${COLORS.purple}15`, color: COLORS.purple, border: `1px solid ${COLORS.purple}40`, cursor: 'pointer' }}>
+            {showRefForm ? 'Cancelar' : '+ Nova Referência'}
+          </button>
         </div>
 
-        {inventory.length === 0 ? (
-          <div style={{ fontSize: 12, color: COLORS.textMuted, padding: '6px 0' }}>
-            Adicione conjuntos no <b style={{ color: COLORS.textSecondary }}>Inventário de Pneus</b> para começar a rastrear quilometragem.
+        {showRefForm && (
+          <div style={{ border: `1px solid ${COLORS.purple}40`, borderRadius: 10, padding: '14px 16px', marginBottom: 14, background: `${COLORS.purple}06` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
+              <Field label="Nome da referência *" textMuted={COLORS.textMuted}>
+                <input type="text" value={newRef.name}
+                  onChange={e => setNewRef(p => ({ ...p, name: e.target.value }))}
+                  placeholder="Ex: Avon A19 — Interlagos seco" style={INPUT_STYLE} />
+              </Field>
+              <Field label="Composto (biblioteca)" textMuted={COLORS.textMuted}>
+                <select value={newRef.compoundId}
+                  onChange={e => setNewRef(p => ({ ...p, compoundId: e.target.value }))}
+                  style={SELECT_STYLE}>
+                  <option value="">— Selecionar —</option>
+                  {compoundLibrary.map(c => (
+                    <option key={c.id} value={c.id}>{getCompoundDisplayName(c)}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Pista" textMuted={COLORS.textMuted}>
+                <select value={newRef.trackName}
+                  onChange={e => setNewRef(p => ({ ...p, trackName: e.target.value }))}
+                  style={SELECT_STYLE}>
+                  <option value="">— Selecionar —</option>
+                  {TRACK_DATABASE.map(t => (
+                    <option key={t.id} value={t.name}>{t.flag ? t.flag + ' ' : ''}{t.shortName || t.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                Pressão Ideal (PSI) por canto
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[['fl','FL'],['fr','FR'],['rl','RL'],['rr','RR']].map(([k, label]) => (
+                  <div key={k}>
+                    <label style={{ fontSize: 11, color: COLORS.green, display: 'block', marginBottom: 3 }}>{label}</label>
+                    <input type="number" step="0.5" min="0" value={newRef[k]}
+                      onChange={e => setNewRef(p => ({ ...p, [k]: e.target.value }))}
+                      placeholder="PSI" style={{ ...INPUT_STYLE, padding: '5px 8px', fontSize: 12 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Field label="Notas" textMuted={COLORS.textMuted}>
+              <input type="text" value={newRef.notes}
+                onChange={e => setNewRef(p => ({ ...p, notes: e.target.value }))}
+                placeholder="Ex: base fria, ajuste +1 psi em pista úmida..."
+                style={INPUT_STYLE} />
+            </Field>
+            <button onClick={addPressaoRef}
+              style={{ marginTop: 12, padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, background: COLORS.purple, color: '#fff', border: 'none', cursor: 'pointer' }}>
+              Salvar Referência
+            </button>
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {inventory.map((row, idx) => {
-              const name      = row.compound?.trim() || `Conjunto ${idx + 1}`;
-              const totalKm   = getTotalKm(row);
-              const expanded  = entryRowId === row.id;
-              const sessionKm = (row.kmEntries || []).reduce((s, e) => s + (parseFloat(e.km) || 0), 0);
+        )}
 
+        {pressaoRefs.length === 0 && !showRefForm && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+            Salve templates de pressão por composto e pista para carregar rapidamente ao criar uma Nova Saída.
+          </div>
+        )}
+
+        {pressaoRefs.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pressaoRefs.map(ref => {
+              const comp = compoundLibrary.find(c => c.id === ref.compoundId);
               return (
-                <div key={row.id} style={{
-                  border: `1px solid ${expanded ? COLORS.green + '60' : COLORS.border}`,
-                  borderRadius: 10, overflow: 'hidden', transition: 'border-color 0.2s',
-                }}>
-                  {/* Cabeçalho do conjunto */}
-                  <div onClick={() => expanded ? setEntryRowId(null) : openEntryRow(row.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 14px', cursor: 'pointer',
-                      background: expanded ? `${COLORS.green}10` : 'transparent',
-                      borderBottom: expanded ? `1px solid ${COLORS.border}33` : 'none',
-                    }}>
-                    <div>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{name}</span>
-                      {row.qty && (
-                        <span style={{ fontSize: 11, color: COLORS.textMuted, marginLeft: 8 }}>
-                          ({row.qty} pneu{row.qty !== '1' ? 's' : ''})
+                <div key={ref.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', border: `1px solid ${COLORS.border}`, borderRadius: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{ref.name}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      {comp && <span style={{ fontSize: 10, background: `${COLORS.green}18`, color: COLORS.green, padding: '1px 6px', borderRadius: 4 }}>{getCompoundDisplayName(comp)}</span>}
+                      {ref.trackName && <span style={{ fontSize: 10, background: `${COLORS.blue}18`, color: COLORS.blue, padding: '1px 6px', borderRadius: 4 }}>📍 {ref.trackName}</span>}
+                      {(ref.fl || ref.fr || ref.rl || ref.rr) && (
+                        <span style={{ fontSize: 10, color: COLORS.textMuted }}>
+                          FL {ref.fl || '—'} · FR {ref.fr || '—'} · RL {ref.rl || '—'} · RR {ref.rr || '—'} PSI
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: totalKm > 0 ? COLORS.green : COLORS.textMuted }}>
-                          {totalKm.toFixed(0)} km
-                        </div>
-                        {(row.kmEntries || []).length > 0 && (
-                          <div style={{ fontSize: 10, color: COLORS.textMuted }}>
-                            base {parseFloat(row.kmAntes) || 0} + sessões {sessionKm.toFixed(0)}
-                          </div>
-                        )}
-                      </div>
-                      <span style={{ fontSize: 11, color: COLORS.textMuted }}>{expanded ? '▲' : '▼'}</span>
-                    </div>
                   </div>
-
-                  {/* Painel expandido */}
-                  {expanded && (
-                    <div style={{ padding: '12px 14px' }}>
-
-                      {/* Lista de entradas */}
-                      {(row.kmEntries || []).length > 0 && (
-                        <div style={{ marginBottom: 12, border: `1px solid ${COLORS.border}22`, borderRadius: 7, overflow: 'hidden' }}>
-                          {row.kmEntries.map((entry, ei) => (
-                            <div key={entry.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '7px 10px',
-                              background: ei % 2 === 0 ? 'transparent' : `${COLORS.bgCard}50`,
-                              borderBottom: ei < row.kmEntries.length - 1 ? `1px solid ${COLORS.border}22` : 'none',
-                              fontSize: 12,
-                            }}>
-                              <span style={{ color: COLORS.green, fontWeight: 700, minWidth: 64 }}>
-                                +{parseFloat(entry.km).toFixed(0)} km
-                              </span>
-                              {entry.date && (
-                                <span style={{ color: COLORS.textMuted, minWidth: 72 }}>
-                                  {entry.date.substring(8, 10)}/{entry.date.substring(5, 7)}/{entry.date.substring(0, 4)}
-                                </span>
-                              )}
-                              <span style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                                {entry.event && <span style={{ color: COLORS.textSecondary }}>{entry.event}</span>}
-                                {(entry.sessionRefs || []).map((sr) => (
-                                  <span key={sr.id} style={{ fontSize: 10, background: `${COLORS.green}20`, color: COLORS.green, padding: '1px 5px', borderRadius: 4 }}>
-                                    📊 {sr.name}
-                                  </span>
-                                ))}
-                                {(entry.tireSetRefs || []).map((tr) => (
-                                  <span key={tr.id} style={{ fontSize: 10, background: `${COLORS.blue}20`, color: COLORS.blue, padding: '1px 5px', borderRadius: 4 }}>
-                                    🏎️ {tr.name}
-                                  </span>
-                                ))}
-                              </span>
-                              <button onClick={() => deleteKmEntry(row.id, entry.id)}
-                                style={{ background: 'transparent', border: 'none', color: COLORS.accent, cursor: 'pointer', fontSize: 16, padding: '0 2px', marginLeft: 'auto', lineHeight: 1 }}>
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {(row.kmEntries || []).length === 0 && (
-                        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 10 }}>
-                          Nenhuma sessão registrada ainda. Km base: <b style={{ color: COLORS.textSecondary }}>{parseFloat(row.kmAntes) || 0} km</b>
-                        </div>
-                      )}
-
-                      {/* Picker: Sessões salvas */}
-                      <div style={{ marginBottom: 8 }}>
-                        <label style={{ fontSize: 10, color: COLORS.textMuted, display: 'block', marginBottom: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                          Sessões salvas no perfil
-                        </label>
-                        <button
-                          onClick={() => { setShowSessionPicker((v) => !v); setShowTireSetPicker(false); }}
-                          style={{
-                            width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 12,
-                            background: selectedSessionIds.length > 0 ? `${COLORS.green}18` : 'transparent',
-                            color: selectedSessionIds.length > 0 ? COLORS.green : COLORS.textSecondary,
-                            border: `1px solid ${selectedSessionIds.length > 0 ? COLORS.green + '60' : COLORS.border}`,
-                            cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          }}>
-                          <span>
-                            {selectedSessionIds.length === 0
-                              ? (sessionsWithKm.length === 0 ? 'Nenhuma sessão com km registrado' : '— Selecionar sessões —')
-                              : `${selectedSessionIds.length} sessão(ões) selecionada(s)`}
-                          </span>
-                          <span style={{ fontSize: 10 }}>{showSessionPicker ? '▲' : '▼'}</span>
-                        </button>
-
-                        {showSessionPicker && sessionsWithKm.length > 0 && (
-                          <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden', marginTop: 4, maxHeight: 180, overflowY: 'auto' }}>
-                            {sessionsWithKm.map((s, si) => {
-                              const checked = selectedSessionIds.includes(s.id);
-                              return (
-                                <div key={s.id} onClick={() => toggleSession(s)}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 10,
-                                    padding: '8px 12px', cursor: 'pointer',
-                                    background: checked ? `${COLORS.green}12` : (si % 2 === 0 ? 'transparent' : `${COLORS.bgCard}50`),
-                                    borderBottom: si < sessionsWithKm.length - 1 ? `1px solid ${COLORS.border}22` : 'none',
-                                  }}>
-                                  <div style={{
-                                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                    border: `2px solid ${checked ? COLORS.green : COLORS.border}`,
-                                    background: checked ? COLORS.green : 'transparent',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}>
-                                    {checked && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                                  </div>
-                                  <div style={{ flex: 1, fontSize: 12 }}>
-                                    <span style={{ color: COLORS.textPrimary, fontWeight: checked ? 600 : 400 }}>{s.name}</span>
-                                    {s.savedAt && (
-                                      <span style={{ color: COLORS.textMuted, marginLeft: 6, fontSize: 11 }}>
-                                        {new Date(s.savedAt).toLocaleDateString('pt-BR')}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.green, flexShrink: 0 }}>
-                                    {s.sessionKm} km
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Km + Data + Registrar */}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', borderTop: `1px solid ${COLORS.border}22`, paddingTop: 10, marginTop: 2 }}>
-                        <div style={{ flex: '0 0 110px' }}>
-                          <label style={{ fontSize: 10, color: COLORS.textMuted, display: 'block', marginBottom: 3 }}>
-                            Km rodados
-                            {selectedSessionIds.length > 0 && <span style={{ color: COLORS.green, marginLeft: 4 }}>● auto</span>}
-                          </label>
-                          <input type="number" min="0" step="0.1"
-                            value={entryKm}
-                            onChange={(e) => setEntryKm(e.target.value)}
-                            placeholder="0"
-                            style={{ ...INPUT_STYLE, padding: '5px 8px', fontSize: 12 }} />
-                        </div>
-                        <div style={{ flex: '0 0 130px' }}>
-                          <label style={{ fontSize: 10, color: COLORS.textMuted, display: 'block', marginBottom: 3 }}>Data</label>
-                          <input type="date"
-                            value={entryDate}
-                            onChange={(e) => setEntryDate(e.target.value)}
-                            style={{ ...INPUT_STYLE, padding: '5px 8px', fontSize: 12 }} />
-                        </div>
-                        <div style={{ flex: '1 1 140px' }}>
-                          <label style={{ fontSize: 10, color: COLORS.textMuted, display: 'block', marginBottom: 3 }}>Evento / Descrição</label>
-                          <input type="text"
-                            value={entryEvent}
-                            onChange={(e) => setEntryEvent(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && addKmEntry(row.id)}
-                            placeholder="Ex: Treino livre 1"
-                            style={{ ...INPUT_STYLE, padding: '5px 8px', fontSize: 12 }} />
-                        </div>
-                        <button onClick={() => addKmEntry(row.id)}
-                          style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, background: COLORS.green, color: '#fff', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                          + Registrar
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => {
+                      setNewStint(p => ({
+                        ...p,
+                        compostoId: ref.compoundId || p.compostoId,
+                        pfFL: ref.fl || p.pfFL,
+                        pfFR: ref.fr || p.pfFR,
+                        pfRL: ref.rl || p.pfRL,
+                        pfRR: ref.rr || p.pfRR,
+                      }));
+                      setShowStintForm(true);
+                    }}
+                    style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: `${COLORS.purple}15`, color: COLORS.purple, border: `1px solid ${COLORS.purple}40`, cursor: 'pointer' }}>
+                      Usar na Saída
+                    </button>
+                    <button onClick={() => deletePressaoRef(ref.id)}
+                      style={{ padding: '4px 8px', borderRadius: 6, fontSize: 11, background: 'transparent', color: COLORS.accent, border: `1px solid ${COLORS.accent}40`, cursor: 'pointer' }}>
+                      ×
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
-        )}
-      </div>
-
-      {/* ── Salvar no Perfil ── */}
-      <div style={{ background: `${COLORS.purple}0a`, border: `1px solid ${COLORS.purple}30`, borderRadius: 12, padding: '14px 16px', marginBottom: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.purple, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>
-          Salvar no Perfil
-        </div>
-        {profilesList.length === 0 ? (
-          <div style={{ fontSize: 12, color: COLORS.textMuted }}>
-            Crie um perfil na aba <b style={{ color: COLORS.textSecondary }}>Perfis</b> para poder salvar.
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 8 }}>
-              <div style={{ flex: '1 1 160px' }}>
-                <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Perfil</label>
-                <select
-                  value={profileSaveTarget || activeProfileId || ''}
-                  onChange={(e) => { setProfileSaveTarget(e.target.value); setSelectedGroupId(''); setProfileSaveMsg(null); }}
-                  style={{ ...SELECT_STYLE, width: '100%' }}>
-                  <option value="">— Selecionar —</option>
-                  {profilesList.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ flex: '1 1 160px' }}>
-                <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Pasta / Etapa (opcional)</label>
-                <select
-                  value={selectedGroupId}
-                  onChange={(e) => { setSelectedGroupId(e.target.value); setProfileSaveMsg(null); }}
-                  style={{ ...SELECT_STYLE, width: '100%' }}>
-                  <option value="">— Sem pasta —</option>
-                  {profileGroups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button onClick={() => setShowNewGroupForm((v) => !v)}
-                style={{ padding: '8px 12px', borderRadius: 7, fontSize: 12, background: 'transparent', color: COLORS.textSecondary, border: `1px solid ${COLORS.border}`, cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-end' }}>
-                + Nova etapa
-              </button>
-            </div>
-
-            {showNewGroupForm && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, padding: '8px 10px', background: `${COLORS.border}22`, borderRadius: 8 }}>
-                <input autoFocus type="text" value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreateGroup()}
-                  placeholder="Ex: Etapa 1 — Interlagos"
-                  style={{ ...INPUT_STYLE, flex: 1 }} />
-                <button onClick={handleCreateGroup}
-                  style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, background: COLORS.purple, color: '#fff', border: 'none', cursor: 'pointer' }}>
-                  Criar
-                </button>
-                <button onClick={() => { setShowNewGroupForm(false); setNewGroupName(''); }}
-                  style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12, background: 'transparent', color: COLORS.textMuted, border: `1px solid ${COLORS.border}`, cursor: 'pointer' }}>
-                  ✕
-                </button>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div style={{ flex: '2 1 180px' }}>
-                <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Nome do conjunto</label>
-                <input type="text"
-                  value={profileSaveName}
-                  onChange={(e) => { setProfileSaveName(e.target.value); setProfileSaveMsg(null); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveToProfile()}
-                  placeholder="Ex: Pneus Q1 — Slick 28psi"
-                  style={{ ...INPUT_STYLE, width: '100%' }} />
-              </div>
-              <button onClick={handleSaveToProfile}
-                style={{ padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, background: COLORS.purple, color: '#fff', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                Salvar Pneus
-              </button>
-            </div>
-            {profileSaveMsg && (
-              <div style={{ marginTop: 8, fontSize: 12, color: profileSaveMsg.ok ? COLORS.green : COLORS.accent }}>
-                {profileSaveMsg.ok ? '✓ ' : '✗ '}{profileSaveMsg.text}
-              </div>
-            )}
-          </>
         )}
       </div>
 

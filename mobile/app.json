@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Apex Dynamics",
+    "slug": "apexdynamics-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0a0a0f"
+    },
+    "android": {
+      "package": "com.apexdynamics.mobile",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0f"
+      },
+      "permissions": [
+        "CAMERA",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE"
+      ]
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Necessário para escanear QR code do desktop"
+        }
+      ],
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Necessário para escanear QR code do desktop"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#e63946"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1b7fb919-9b9b-4ab4-b919-5e62ddf035c9"
+      }
+    }
+  }
+}

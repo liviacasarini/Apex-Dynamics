@@ -29,6 +29,23 @@ function globalAvg(rows, channels, channel) {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
+function ReportRow({ label, value, unit, lap, color, warning }) {
+  const COLORS = useColors();
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: `1px solid ${COLORS.border}11` }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{label}</div>
+        {warning && <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>⚠️ {warning}</div>}
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: color || COLORS.textPrimary }}>{value}</span>
+        <span style={{ fontSize: 12, color: COLORS.textMuted, marginLeft: 4 }}>{unit}</span>
+        {lap && lap !== '-' && <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Volta {lap}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNum, filterMode, setFilterMode, hasOutLap }) {
   const COLORS = useColors();
   const theme = makeTheme(COLORS);
@@ -97,35 +114,6 @@ export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNu
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const ReportRow = ({ label, value, unit, lap, color, warning }) => (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '14px 20px',
-        borderBottom: `1px solid ${COLORS.border}11`,
-      }}
-    >
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>{label}</div>
-        {warning && (
-          <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 2 }}>⚠️ {warning}</div>
-        )}
-      </div>
-      <div style={{ textAlign: 'right' }}>
-        <span style={{ fontSize: 22, fontWeight: 800, color: color || COLORS.textPrimary }}>
-          {value}
-        </span>
-        <span style={{ fontSize: 12, color: COLORS.textMuted, marginLeft: 4 }}>{unit}</span>
-        {lap && lap !== '-' && (
-          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
-            Volta {lap}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 
   const effectiveBestNum = useMemo(() => {
     if (selectedLaps.has(bestLapNum)) return bestLapNum;
