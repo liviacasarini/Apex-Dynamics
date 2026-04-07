@@ -177,24 +177,29 @@ export default function WorkspaceBar({
             ref={createRef}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px' }}
           >
-            <select
-              value={createVehicle}
-              onChange={(e) => setCreateVehicle(e.target.value)}
-              style={{
-                background: COLORS.bg,
-                color: COLORS.textPrimary,
-                border: `1px solid ${COLORS.accent}66`,
-                borderRadius: 4,
-                padding: '3px 4px',
-                fontSize: 11,
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {VEHICLE_TYPES.map((vt) => (
-                <option key={vt.value} value={vt.value}>{vt.icon} {vt.label}</option>
-              ))}
-            </select>
+            {VEHICLE_TYPES.map((vt) => {
+              const sel = createVehicle === vt.value;
+              return (
+                <button
+                  key={vt.value}
+                  type="button"
+                  onClick={() => setCreateVehicle(vt.value)}
+                  title={vt.label}
+                  style={{
+                    background: sel ? `${COLORS.accent}22` : 'transparent',
+                    border: `1px solid ${sel ? COLORS.accent + '88' : COLORS.border}`,
+                    color: sel ? COLORS.accent : COLORS.textMuted,
+                    borderRadius: 4,
+                    padding: '3px 7px',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                  }}
+                >
+                  {vt.icon}
+                </button>
+              );
+            })}
             <input
               autoFocus
               value={createVal}
