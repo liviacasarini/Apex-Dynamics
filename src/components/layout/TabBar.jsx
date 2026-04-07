@@ -5,7 +5,7 @@ import { getTabsForVehicle } from '@/constants/tabs';
 
 const TELEMETRY_ONLY = new Set(['laps', 'wot', 'report', 'track']);
 const ORDER_KEY_BASE = 'rt_tab_order';
-const orderKey = (vt) => (vt === 'moto' ? `${ORDER_KEY_BASE}_moto` : ORDER_KEY_BASE);
+const orderKey = (vt) => (vt === 'moto' ? `${ORDER_KEY_BASE}_moto` : vt === 'truck' ? `${ORDER_KEY_BASE}_truck` : ORDER_KEY_BASE);
 
 function loadOrder(TABS, vt) {
   try {
@@ -188,7 +188,8 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
     setDragOverId(null);
   }
 
-  const orderedTabs = order.map((id) => TABS.find((t) => t.id === id)).filter(Boolean);
+  const vehicleTabs = getTabsForVehicle(vehicleType);
+  const orderedTabs = order.map((id) => vehicleTabs.find((t) => t.id === id)).filter(Boolean);
   const visibleTabs = isLoaded
     ? orderedTabs
     : orderedTabs.filter((t) => !TELEMETRY_ONLY.has(t.id));

@@ -7,10 +7,12 @@ import { useColors } from '@/context/ThemeContext';
 import { LAP_COLORS } from '@/constants/colors';
 import { ChartCard, CustomTooltip, FilterModeBar, PrintFooter } from '@/components/common';
 import { makeTheme } from '@/styles/theme';
+import { getVitalChannels } from '@/constants/vitals';
 
-export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, setVitalsLimits, isLoaded, filterMode, setFilterMode, hasOutLap, vehicleType }) {
+export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, setVitalsLimits, isLoaded, filterMode, setFilterMode, hasOutLap, vehicleType = 'car' }) {
   const COLORS = useColors();
   const theme = makeTheme(COLORS);
+  const isTruck = vehicleType === 'truck';
 
   /** Vitais com canal de telemetria */
   const CAR_VITAL_DEFS = [
@@ -82,7 +84,21 @@ export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, 
     { key: 'absActive',         label: 'ABS Ativo',              unit: '',    color: COLORS.blue,    hasMax: false, hasMin: false, decimals: 0 },
   ];
 
-  const VITAL_DEFS = vehicleType === 'moto' ? MOTO_VITAL_DEFS : CAR_VITAL_DEFS;
+  const TRUCK_VITAL_DEFS = [
+    { key: 'engineTemp',       label: 'Temp. Motor',           unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'oilPressure',      label: 'Pressão Óleo Motor',   unit: 'bar', color: COLORS.yellow,  hasMax: true,  hasMin: true  },
+    { key: 'battery',          label: 'Bateria (24V)',         unit: 'V',   color: COLORS.blue,    hasMax: false, hasMin: true  },
+    { key: 'egt',              label: 'Temp. Gases Escape',   unit: '°C',  color: COLORS.orange,  hasMax: true,  hasMin: false },
+    { key: 'map',              label: 'Boost / MAP Turbo',    unit: 'bar', color: COLORS.green,   hasMax: true,  hasMin: false },
+    { key: 'fuelPressure',     label: 'Pressão Common Rail',  unit: 'bar', color: COLORS.cyan,    hasMax: true,  hasMin: true  },
+    { key: 'transOilTemp',     label: 'Temp. Óleo Câmbio',   unit: '°C',  color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    { key: 'transOilPressure', label: 'Pressão Óleo Câmbio', unit: 'bar', color: COLORS.accent,  hasMax: true,  hasMin: true  },
+    { key: 'iat',              label: 'Temp. Ar Admissão',   unit: '°C',  color: COLORS.yellow,  hasMax: true,  hasMin: false },
+  ];
+
+  const VITAL_DEFS = vehicleType === 'moto'  ? MOTO_VITAL_DEFS
+                   : vehicleType === 'truck' ? TRUCK_VITAL_DEFS
+                   : CAR_VITAL_DEFS;
 
   const INPUT_STYLE = {
     width: '100%',

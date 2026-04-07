@@ -46,8 +46,9 @@ function ReportRow({ label, value, unit, lap, color, warning }) {
   );
 }
 
-export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNum, filterMode, setFilterMode, hasOutLap }) {
+export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNum, filterMode, setFilterMode, hasOutLap, vehicleType = 'car' }) {
   const COLORS = useColors();
+  const isTruck = vehicleType === 'truck';
   const theme = makeTheme(COLORS);
   const lapNums = useMemo(() =>
     Object.keys(lapsAnalysis)
@@ -139,7 +140,7 @@ export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNu
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 28 }}>📋</span>
             <div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>Relatório da Sessão</div>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{isTruck ? 'Relatório da Sessão — Caminhão' : 'Relatório da Sessão'}</div>
               <div style={{ fontSize: 12, color: COLORS.textMuted }}>{data.fileName}</div>
             </div>
           </div>
@@ -209,12 +210,14 @@ export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNu
           unit="°C"
           color={COLORS.orange}
         />
-        <ReportRow
-          label="Lambda Médio"
-          value={report.lambdaAvg.toFixed(3)}
-          unit=""
-          color={COLORS.green}
-        />
+        {!isTruck && (
+          <ReportRow
+            label="Lambda Médio"
+            value={report.lambdaAvg.toFixed(3)}
+            unit=""
+            color={COLORS.green}
+          />
+        )}
       </div>
 
       {/* Pressões */}
@@ -236,12 +239,12 @@ export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNu
           color={COLORS.yellow}
         />
         <ReportRow
-          label="Pressão Mínima de Combustível"
+          label={isTruck ? "Pressão Mínima Common Rail" : "Pressão Mínima de Combustível"}
           value={report.fuelPressMin.value.toFixed(2)}
           unit="bar"
           lap={report.fuelPressMin.lap}
           color={report.fuelPressMin.value < 2.5 ? COLORS.accent : COLORS.orange}
-          warning={report.fuelPressMin.value < 2.5 ? 'Pressão de combustível baixa — checar bomba/regulador' : null}
+          warning={report.fuelPressMin.value < 2.5 ? (isTruck ? 'Pressão Common Rail baixa — checar bomba de alta pressão' : 'Pressão de combustível baixa — checar bomba/regulador') : null}
         />
       </div>
 
@@ -253,8 +256,8 @@ export default function ReportTab({ data, channels, lapsAnalysis = {}, bestLapNu
           value={report.batteryMin.value.toFixed(1)}
           unit="V"
           lap={report.batteryMin.lap}
-          color={report.batteryMin.value < 12.0 ? COLORS.accent : COLORS.blue}
-          warning={report.batteryMin.value < 12.0 ? 'Tensão abaixo de 12V — checar alternador/bateria' : null}
+          color={report.batteryMin.value < (isTruck ? 24.0 : 12.0) ? COLORS.accent : COLORS.blue}
+          warning={report.batteryMin.value < (isTruck ? 24.0 : 12.0) ? (isTruck ? 'Tensão abaixo de 24V — checar alternador/bateria' : 'Tensão abaixo de 12V — checar alternador/bateria') : null}
         />
       </div>
 

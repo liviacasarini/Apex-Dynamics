@@ -49,9 +49,10 @@ function SectionBox({ sectionKey, title, children, collapsed, toggleSection }) {
 }
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
-export default function LapTimeTab({ setupForm, setSetupForm }) {
+export default function LapTimeTab({ setupForm, setSetupForm, vehicleType = 'car' }) {
   const COLORS = useColors();
   const theme  = makeTheme(COLORS);
+  const isTruck = vehicleType === 'truck';
   const { setCgHeight, setCgLong } = useCarWeight();
 
   const INPUT_BASE = {
@@ -110,7 +111,7 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       </div>
 
       {/* ── Motor / Powertrain ── */}
-      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="motor" title="🔥 Motor / Powertrain">
+      <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="motor" title={isTruck ? '🔥 Motor / Powertrain (Diesel Turbo)' : '🔥 Motor / Powertrain'}>
 
         {/* Motor */}
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px' }}>Motor</div>
@@ -149,8 +150,8 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
 
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
           <div style={fieldRow}>
-            <InputField label="Cilindrada Total"    value={current.engine_displacement}     onChange={updateField('engine_displacement')}     unit="cc"  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
-            <InputField label="Nº de Cilindros"     value={current.engine_cylinders}        onChange={updateField('engine_cylinders')}                   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label={isTruck ? 'Cilindrada Total (ex: 13000)' : 'Cilindrada Total'}    value={current.engine_displacement}     onChange={updateField('engine_displacement')}     unit="cc"  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            <InputField label={isTruck ? 'Nº de Cilindros (ex: 6)' : 'Nº de Cilindros'}     value={current.engine_cylinders}        onChange={updateField('engine_cylinders')}                   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
             <InputField label="Arquitetura"         value={current.engine_architecture}     onChange={updateField('engine_architecture')}                half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
             <InputField label="Taxa de Compressão"  value={current.engine_compressionRatio} onChange={updateField('engine_compressionRatio')} unit=":1"  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
             <InputField label="Ângulo Virabrequim"  value={current.engine_crankAngle}       onChange={updateField('engine_crankAngle')}       unit="°"   half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
@@ -163,9 +164,11 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
 
         {/* Gestão Eletrônica (ECU) */}
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${COLORS.border}33` }}>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Gestão Eletrônica (ECU)</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, fontWeight: 600 }}>Gestão Eletrônica (ECU){isTruck ? ' — Diesel' : ''}</div>
           <div style={fieldRow}>
-            <InputField label="Mapa de Ignição"      value={current.engine_ecuIgnMap}  onChange={updateField('engine_ecuIgnMap')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            {!isTruck && (
+              <InputField label="Mapa de Ignição"      value={current.engine_ecuIgnMap}  onChange={updateField('engine_ecuIgnMap')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
+            )}
             <InputField label="Mapa de Injeção"      value={current.engine_ecuInjMap}  onChange={updateField('engine_ecuInjMap')}  half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
             <InputField label="Corte de Combustível" value={current.engine_ecuFuelCut} onChange={updateField('engine_ecuFuelCut')} half inputBase={INPUT_BASE} textMuted={COLORS.textMuted} />
           </div>
@@ -179,7 +182,9 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
             const finalDr = parseFloat(current.trans_finalDrive);
             const revLimit= parseFloat(current.engine_revLimit);
             const rTyre   = parseFloat(current.trans_tyreRadius) / 1000;
-            const gearKeys= ['trans_gear1','trans_gear2','trans_gear3','trans_gear4','trans_gear5','trans_gear6','trans_gear7','trans_gear8'];
+            const gearKeys= isTruck
+              ? Array.from({ length: 16 }, (_, i) => `trans_gear${i + 1}`)
+              : ['trans_gear1','trans_gear2','trans_gear3','trans_gear4','trans_gear5','trans_gear6','trans_gear7','trans_gear8'];
             return (
               <>
                 <div style={fieldRow}>
@@ -244,8 +249,9 @@ export default function LapTimeTab({ setupForm, setSetupForm }) {
       {/* ── Curva de Torque ── */}
       <SectionBox collapsed={collapsed} toggleSection={toggleSection} sectionKey="torqueCurve" title="📈 Curva de Torque">
         <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>
-          Insira o torque em diferentes rotações. Quanto mais pontos, mais preciso o cálculo de tempo de volta.
-          Dados disponíveis no relatório de dinamômetro (dyno) ou software do fabricante do motor.
+          {isTruck
+            ? 'Insira o torque em diferentes rotações. Motores diesel turbo possuem platô de torque largo (ex: 1000–1800 rpm). Quanto mais pontos, mais preciso o cálculo.'
+            : 'Insira o torque em diferentes rotações. Quanto mais pontos, mais preciso o cálculo de tempo de volta. Dados disponíveis no relatório de dinamômetro (dyno) ou software do fabricante do motor.'}
         </div>
 
         {/* Cabeçalho da tabela */}

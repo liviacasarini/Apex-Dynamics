@@ -29,7 +29,8 @@
  * @param {string} bestLapNum - Número da melhor volta.
  * @returns {LapFeedback[]}
  */
-export function generateDriverFeedback(lapsAnalysis, bestLapNum) {
+export function generateDriverFeedback(lapsAnalysis, bestLapNum, vehicleType = 'car') {
+  const isTruck = vehicleType === 'truck';
   if (!lapsAnalysis || Object.keys(lapsAnalysis).length < 2) return [];
 
   const best = lapsAnalysis[bestLapNum];
@@ -92,8 +93,9 @@ export function generateDriverFeedback(lapsAnalysis, bestLapNum) {
         area: 'Frenagens Extras',
         severity: 'low',
         detail: `${stats.brakeZones} zonas de frenagem vs ${best.brakeZones} (melhor)`,
-        suggestion:
-          'Frenagens adicionais indicam hesitação ou entrada de curva imprecisa. Trabalhar nos pontos de referência.',
+        suggestion: isTruck
+          ? 'Frenagens adicionais indicam hesitação. Utilize o retarder nas zonas de frenagem para preservar os freios pneumáticos.'
+          : 'Frenagens adicionais indicam hesitação ou entrada de curva imprecisa. Trabalhar nos pontos de referência.',
         estimatedLoss: '~0.1-0.3s',
       });
     }
@@ -104,8 +106,9 @@ export function generateDriverFeedback(lapsAnalysis, bestLapNum) {
         area: 'Uso do Motor (RPM)',
         severity: 'low',
         detail: `RPM médio: ${stats.avgRPM.toFixed(0)} vs ${best.avgRPM.toFixed(0)}`,
-        suggestion:
-          'Motor fora da faixa ideal de potência. Revisar pontos de troca de marcha — pode estar engrenando cedo demais.',
+        suggestion: isTruck
+          ? 'Motor fora da faixa ideal (1000–2200 rpm para diesel turbo). Manter RPM no platô de torque para máxima eficiência.'
+          : 'Motor fora da faixa ideal de potência. Revisar pontos de troca de marcha — pode estar engrenando cedo demais.',
         estimatedLoss: '~0.1-0.5s',
       });
     }
@@ -119,6 +122,17 @@ export function generateDriverFeedback(lapsAnalysis, bestLapNum) {
         suggestion:
           'Velocidade média mais baixa indica curvas mais lentas. Trabalhar a confiança na entrada e manter velocidade no ápice.',
         estimatedLoss: `~${((1 - stats.avgSpeed / best.avgSpeed) * timeDiff).toFixed(2)}s`,
+      });
+    }
+
+    // Truck-specific: retarder tip (always added for truck laps with any feedback)
+    if (isTruck && items.length > 0) {
+      items.push({
+        area: 'Retarder',
+        severity: 'low',
+        detail: 'Dica específica para caminhão',
+        suggestion: 'Utilize o retarder nas zonas de frenagem para preservar os freios pneumáticos.',
+        estimatedLoss: '—',
       });
     }
 
@@ -160,3 +174,41 @@ export const DRIVING_TIPS = [
     tip: 'Movimentos bruscos de volante, freio ou acelerador desestabilizam o carro. Inputs progressivos mantêm o equilíbrio e extraem mais grip.',
   },
 ];
+
+/**
+ * Dicas de pilotagem específicas para caminhão (Copa Truck).
+ */
+export const DRIVING_TIPS_TRUCK = [
+  {
+    title: 'Uso do Retarder',
+    tip: 'Utilize o retarder nas zonas de frenagem para preservar os freios pneumáticos. Dosagem progressiva evita travamento do eixo traseiro.',
+  },
+  {
+    title: 'Platô de Torque',
+    tip: 'Motores diesel turbo possuem platô de torque largo (1000–1800 rpm). Mantenha o motor nessa faixa para máxima tração na saída das curvas.',
+  },
+  {
+    title: 'Gerenciamento de Freios',
+    tip: 'Freios pneumáticos têm fadiga térmica acentuada. Combine retarder + freio motor antes de aplicar o pedal para manter a temperatura de trabalho.',
+  },
+  {
+    title: 'Olhos à Frente',
+    tip: 'Sempre olhar para o próximo ponto de referência, não para o que está fazendo agora. Visão à frente = antecipação = tempo.',
+  },
+  {
+    title: 'Consistência',
+    tip: 'Antes de buscar velocidade, busque repetibilidade. Uma volta boa repetida 10x vale mais que uma volta perfeita seguida de 9 ruins.',
+  },
+  {
+    title: 'Peso e Inércia',
+    tip: 'Com mais de 5 toneladas, o caminhão carrega muito mais inércia. Antecipe frenagens e evite mudanças bruscas de direção.',
+  },
+];
+
+/**
+ * Retorna dicas conforme o tipo de veículo.
+ * @param {string} [vehicleType='car']
+ */
+export function getDrivingTips(vehicleType = 'car') {
+  return vehicleType === 'truck' ? DRIVING_TIPS_TRUCK : DRIVING_TIPS;
+}

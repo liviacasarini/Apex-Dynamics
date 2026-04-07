@@ -105,8 +105,9 @@ function analyzeWOT(laps, channels, lapsAnalysis) {
   return { perLap: results, global, wotTrace: globalWOT };
 }
 
-export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
+export default function WOTAnalysisTab({ data, channels, lapsAnalysis, vehicleType = 'car' }) {
   const COLORS = useColors();
+  const isTruck = vehicleType === 'truck';
   const theme = makeTheme(COLORS);
   const wotData = useMemo(
     () => analyzeWOT(data.laps, channels, lapsAnalysis),
@@ -241,11 +242,13 @@ export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
         <div style={theme.cardTitle}>🔥 Análise em WOT (Pé Cheio no Acelerador)</div>
         <p style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 16 }}>
           Dados coletados somente quando o acelerador está acima de 90%.
-          Ideal para avaliar desempenho do motor, mistura e saúde dos sensores em carga máxima.
+          {isTruck
+            ? ' Ideal para avaliar desempenho do turbo diesel, resposta do turbo e saúde dos sensores em carga máxima. Atenção ao turbo lag nas saídas de curva.'
+            : ' Ideal para avaliar desempenho do motor, mistura e saúde dos sensores em carga máxima.'}
         </p>
         <div style={theme.grid(5)}>
-          <MetricCard label="Lambda Médio WOT"  value={global.lambda.avg.toFixed(3)}  unit=""    color={COLORS.green}  small />
-          <MetricCard label="MAP Médio WOT"      value={global.map.avg.toFixed(1)}      unit="kPa" color={COLORS.purple} small />
+          {!isTruck && <MetricCard label="Lambda Médio WOT"  value={global.lambda.avg.toFixed(3)}  unit=""    color={COLORS.green}  small />}
+          <MetricCard label={isTruck ? "Boost / MAP Médio WOT" : "MAP Médio WOT"} value={global.map.avg.toFixed(1)} unit="kPa" color={COLORS.purple} small />
           <MetricCard label="Bateria Média"       value={global.battery.avg.toFixed(1)}  unit="V"   color={COLORS.blue}   small />
           <MetricCard label="RPM Máx WOT"         value={global.rpm.max.toFixed(0)}       unit=""    color={COLORS.accent} small />
           <MetricCard label="Temp Média WOT"      value={global.temp.avg.toFixed(1)}     unit="°C"  color={COLORS.orange} small />
@@ -286,38 +289,40 @@ export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Lambda Médio em WOT por Volta" height={240}>
-          <ResponsiveContainer>
-            <LineChart data={wotLine}>
-              <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-              <XAxis dataKey="lap" tick={{ fill: COLORS.textMuted, fontSize: 11 }} />
-              <YAxis tick={{ fill: COLORS.textMuted, fontSize: 11 }} domain={['auto', 'auto']} />
-              <Tooltip content={<CustomTooltip decimals={3} />} />
-              <Line
-                type="monotone"
-                dataKey="lambdaAvg"
-                stroke={COLORS.green}
-                strokeWidth={2}
-                dot={{ fill: COLORS.green, r: 5, strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{ r: 7 }}
-                name="Lambda Médio"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        {!isTruck && (
+          <ChartCard title="Lambda Médio em WOT por Volta" height={240}>
+            <ResponsiveContainer>
+              <LineChart data={wotLine}>
+                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+                <XAxis dataKey="lap" tick={{ fill: COLORS.textMuted, fontSize: 11 }} />
+                <YAxis tick={{ fill: COLORS.textMuted, fontSize: 11 }} domain={['auto', 'auto']} />
+                <Tooltip content={<CustomTooltip decimals={3} />} />
+                <Line
+                  type="monotone"
+                  dataKey="lambdaAvg"
+                  stroke={COLORS.green}
+                  strokeWidth={2}
+                  dot={{ fill: COLORS.green, r: 5, strokeWidth: 2, stroke: '#fff' }}
+                  activeDot={{ r: 7 }}
+                  name="Lambda Médio"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
       </div>
 
       {/* Lambda + MAP trace durante WOT */}
-      <ChartCard title="Lambda e MAP durante WOT (todas as voltas)" height={300}>
+      <ChartCard title={isTruck ? "Boost / MAP durante WOT (todas as voltas)" : "Lambda e MAP durante WOT (todas as voltas)"} height={300}>
         <ResponsiveContainer>
           <LineChart data={lambdaTrace}>
             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
             <XAxis dataKey="idx" tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
-            <YAxis yAxisId="lambda" tick={{ fill: COLORS.textMuted, fontSize: 10 }} domain={['auto', 'auto']} />
-            <YAxis yAxisId="map" orientation="right" tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
+            {!isTruck && <YAxis yAxisId="lambda" tick={{ fill: COLORS.textMuted, fontSize: 10 }} domain={['auto', 'auto']} />}
+            <YAxis yAxisId="map" orientation={isTruck ? "left" : "right"} tick={{ fill: COLORS.textMuted, fontSize: 10 }} />
             <Tooltip content={<CustomTooltip perKeyDecimals={{ lambda: 3 }} />} />
-            <Line yAxisId="lambda" type="monotone" dataKey="lambda" stroke={COLORS.green} strokeWidth={1.5} dot={false} name="Lambda" />
-            <Line yAxisId="map"    type="monotone" dataKey="map"    stroke={COLORS.purple} strokeWidth={1}   dot={false} name="MAP" />
+            {!isTruck && <Line yAxisId="lambda" type="monotone" dataKey="lambda" stroke={COLORS.green} strokeWidth={1.5} dot={false} name="Lambda" />}
+            <Line yAxisId="map"    type="monotone" dataKey="map"    stroke={COLORS.purple} strokeWidth={1}   dot={false} name={isTruck ? "Boost / MAP" : "MAP"} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </LineChart>
         </ResponsiveContainer>
@@ -327,7 +332,7 @@ export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
       {boostMapData && (() => {
         const lapPalette = [COLORS.blue, COLORS.green, COLORS.orange, COLORS.cyan, COLORS.yellow, COLORS.textSecondary];
         return (
-          <ChartCard title="Mapa de Boost — MAP vs RPM (em WOT)" height={300}>
+          <ChartCard title={isTruck ? "Mapa de Boost — Boost / MAP vs RPM (em WOT)" : "Mapa de Boost — MAP vs RPM (em WOT)"} height={300}>
             <ResponsiveContainer>
               <LineChart data={boostMapData.bins} margin={{ top: 5, right: 24, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
@@ -380,7 +385,12 @@ export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                {['Volta', 'Tempo WOT', 'Lambda Méd', 'Lambda Mín', 'MAP Méd', 'RPM Máx', 'Bateria', 'Óleo Méd', 'Óleo Mín', 'Temp Méd', 'Temp Máx'].map((h) => (
+                {[
+                  'Volta', 'Tempo WOT',
+                  ...(isTruck ? [] : ['Lambda Méd', 'Lambda Mín']),
+                  isTruck ? 'Boost / MAP Méd' : 'MAP Méd',
+                  'RPM Máx', 'Bateria', 'Óleo Méd', 'Óleo Mín', 'Temp Méd', 'Temp Máx',
+                ].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: 'center', color: COLORS.textMuted, fontWeight: 600 }}>
                     {h}
                   </th>
@@ -396,8 +406,8 @@ export default function WOTAnalysisTab({ data, channels, lapsAnalysis }) {
                   <tr key={n} style={{ borderBottom: `1px solid ${COLORS.border}11` }}>
                     <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, color: COLORS.accent }}>V{n}</td>
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>{s.wotTime.toFixed(2)} s</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'center', color: COLORS.green }}>{s.lambda.avg.toFixed(3)}</td>
-                    <td style={{ padding: '6px 10px', textAlign: 'center', color: COLORS.green }}>{s.lambda.min.toFixed(3)}</td>
+                    {!isTruck && <td style={{ padding: '6px 10px', textAlign: 'center', color: COLORS.green }}>{s.lambda.avg.toFixed(3)}</td>}
+                    {!isTruck && <td style={{ padding: '6px 10px', textAlign: 'center', color: COLORS.green }}>{s.lambda.min.toFixed(3)}</td>}
                     <td style={{ padding: '6px 10px', textAlign: 'center', color: COLORS.cyan }}>{s.map.avg.toFixed(1)}</td>
                     {/* RPM Máx — destaque se maior de todas as voltas */}
                     <td style={{

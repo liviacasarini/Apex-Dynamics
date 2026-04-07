@@ -87,7 +87,7 @@ export const CHANNEL_ALIASES = {
 };
 
 /**
- * Métricas disponíveis para comparação de voltas.
+ * Métricas disponíveis para comparação de voltas (carro).
  */
 export const CHART_METRICS = [
   { key: 'gpsSpeed', label: 'Velocidade',  unit: 'km/h' },
@@ -99,3 +99,24 @@ export const CHART_METRICS = [
   { key: 'map',      label: 'MAP',         unit: 'kPa'   },
   { key: 'ignAngle', label: 'Ignição',     unit: '°'     },
 ];
+
+/**
+ * Métricas adicionais disponíveis para truck.
+ * Inclui boost (MAP relabelado), EGT, e retarder.
+ */
+export const CHART_METRICS_TRUCK = [
+  { key: 'gpsSpeed', label: 'Velocidade',     unit: 'km/h' },
+  { key: 'rpm',      label: 'RPM',            unit: 'rpm'   },
+  { key: 'throttle', label: 'Acelerador',     unit: '%'     },
+  { key: 'brake',    label: 'Freio (Ar)',     unit: 'bar'   },
+  { key: 'accel',    label: 'Aceleração G',   unit: 'G'    },
+  { key: 'map',      label: 'Boost / MAP',    unit: 'bar'   },
+  { key: 'egt',      label: 'EGT',            unit: '°C'    },
+  { key: 'gear',     label: 'Marcha',         unit: ''      },
+  { key: 'iat',      label: 'Temp. Ar Adm.', unit: '°C'    },
+];
+
+/** Retorna CHART_METRICS por tipo de veículo */
+export function getChartMetrics(vehicleType) {
+  return vehicleType === 'truck' ? CHART_METRICS_TRUCK : CHART_METRICS;
+}

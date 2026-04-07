@@ -113,6 +113,9 @@ export function useWorkspaces() {
     trackTemplates,
     ...trackDataCRUD,
 
+    // Vehicle type
+    vehicleType,
+
     // Misc (tab, vitals, fuel, weight, reports, export/import, brakePad)
     activeTab,
     vitalsLimits,

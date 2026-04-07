@@ -51,6 +51,18 @@ const COMPOUND_OPTIONS = [
 
 const COMPOUND_LABEL = Object.fromEntries(COMPOUND_OPTIONS.map((o) => [o.value, o.label]));
 
+const COMPOUND_OPTIONS_TRUCK = [
+  { value: '',              label: '— Selecionar —'      },
+  { value: 'truck-soft',    label: 'Truck — Macio'       },
+  { value: 'truck-medium',  label: 'Truck — Médio'       },
+  { value: 'truck-hard',    label: 'Truck — Duro'        },
+  { value: 'truck-rain',    label: 'Truck — Chuva'       },
+  { value: 'intermediario', label: 'Intermediário'        },
+  { value: 'other',         label: 'Outro'                },
+];
+
+const COMPOUND_LABEL_TRUCK = Object.fromEntries(COMPOUND_OPTIONS_TRUCK.map((o) => [o.value, o.label]));
+
 const TRACK_STATE_OPTIONS = [
   { value: '',       label: '— Selecionar —' },
   { value: 'seca',   label: 'Seca'           },
@@ -157,8 +169,8 @@ const DEFAULT_COMPOUND_ENTRY = () => ({
 });
 
 // Pré-popula a biblioteca com todos os compostos (sem especificações)
-const DEFAULT_COMPOUND_LIBRARY = () =>
-  COMPOUND_OPTIONS
+const DEFAULT_COMPOUND_LIBRARY = (options = COMPOUND_OPTIONS) =>
+  options
     .filter((o) => o.value && o.value !== 'other')
     .map((o) => ({ ...DEFAULT_COMPOUND_ENTRY(), id: crypto.randomUUID(), composto: o.value }));
 
@@ -778,8 +790,12 @@ export default function PneusTab({
   pneusForm, setPneusForm,
   profileTireKm, onSaveTireKm,
   profileSessions = [],
+  vehicleType = 'car',
 }) {
   const COLORS = useColors();
+  const isTruck = vehicleType === 'truck';
+  const activeCompounds = isTruck ? COMPOUND_OPTIONS_TRUCK : COMPOUND_OPTIONS;
+  const activeCompoundLabel = isTruck ? COMPOUND_LABEL_TRUCK : COMPOUND_LABEL;
 
   // ── Cross-tab: condições do último registro de temperatura ──
   const latestTemp = useMemo(() => readLatestTemp(), []);
@@ -868,7 +884,8 @@ export default function PneusTab({
   }
 
   // ── Inventário de pneus (por perfil) ─────────────────────────────────────
-  const inventoryKey = `rt_tyre_inventory_${activeProfileId || 'default'}`;
+  const tyreStoragePrefix = isTruck ? 'rt_pneus_truck_' : 'rt_pneus_';
+  const inventoryKey = `${isTruck ? 'rt_tyre_inventory_truck_' : 'rt_tyre_inventory_'}${activeProfileId || 'default'}`;
 
   const [inventory, setInventory] = useState(() => {
     try { return JSON.parse(localStorage.getItem(`rt_tyre_inventory_${activeProfileId || 'default'}`)) || []; }
@@ -1030,8 +1047,8 @@ export default function PneusTab({
 
   const handleSave = () => {
     try {
-      localStorage.setItem('rt_tyres',      JSON.stringify(tyres));
-      localStorage.setItem('rt_conditions', JSON.stringify(conditions));
+      localStorage.setItem(`${tyreStoragePrefix}tyres`,      JSON.stringify(tyres));
+      localStorage.setItem(`${tyreStoragePrefix}conditions`, JSON.stringify(conditions));
     } catch (_) {}
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -1042,8 +1059,8 @@ export default function PneusTab({
     setConditions(DEFAULT_CONDITIONS);
     setSaved(false);
     try {
-      localStorage.removeItem('rt_tyres');
-      localStorage.removeItem('rt_conditions');
+      localStorage.removeItem(`${tyreStoragePrefix}tyres`);
+      localStorage.removeItem(`${tyreStoragePrefix}conditions`);
     } catch (_) {}
   };
 
@@ -1093,7 +1110,7 @@ export default function PneusTab({
   const hasTEV = tevRows.some((r) => r.t !== null || r.eVal !== null || r.vVal !== null);
 
   // ── NOVO: Biblioteca de Compostos ─────────────────────────────────────────
-  const libraryKey = 'rt_tyre_library';
+  const libraryKey = isTruck ? 'rt_tyre_library_truck' : 'rt_tyre_library';
   const [compoundLibrary, setCompoundLibrary] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(libraryKey));
@@ -1147,13 +1164,13 @@ export default function PneusTab({
     const parts = [
       entry.fabricante,
       entry.modelo,
-      COMPOUND_LABEL[entry.composto] || entry.composto,
+      activeCompoundLabel[entry.composto] || COMPOUND_LABEL[entry.composto] || entry.composto,
     ].filter(Boolean);
     return parts.join(' — ') || 'Composto sem nome';
   };
 
   // ── NOVO: Comparativo de Saídas ──────────────────────────────────────────
-  const stintsKey = `rt_tyre_stints_${activeProfileId || 'default'}`;
+  const stintsKey = `${isTruck ? 'rt_tyre_stints_truck_' : 'rt_tyre_stints_'}${activeProfileId || 'default'}`;
   const [stints, setStints] = useState(() => {
     try { return JSON.parse(localStorage.getItem(stintsKey)) || []; }
     catch { return []; }
@@ -1172,7 +1189,7 @@ export default function PneusTab({
   const [newStint,      setNewStint]      = useState(DEFAULT_STINT);
 
   // ── Pressões de Referência ────────────────────────────────────────────────
-  const refsKey = `rt_tyre_refs_${activeProfileId || 'default'}`;
+  const refsKey = `${isTruck ? 'rt_tyre_refs_truck_' : 'rt_tyre_refs_'}${activeProfileId || 'default'}`;
   const [pressaoRefs, setPressaoRefs] = useState(() => {
     try { return JSON.parse(localStorage.getItem(refsKey)) || []; }
     catch { return []; }
@@ -1431,9 +1448,9 @@ export default function PneusTab({
                 </div>
                 {/* Campos */}
                 {[
-                  { field: 'cold',  label: 'Fria  (Pf)', placeholder: 'Ex: 27.5', color: COLORS.blue,   filled: hasCold  },
-                  { field: 'hot',   label: 'Quente (Pq)', placeholder: 'Ex: 30.5', color: COLORS.orange, filled: hasHot   },
-                  { field: 'ideal', label: 'Ideal  (T)',  placeholder: 'Ex: 29.5', color: COLORS.green,  filled: hasIdeal },
+                  { field: 'cold',  label: 'Fria  (Pf)', placeholder: isTruck ? 'Ex: 8.5' : 'Ex: 27.5', color: COLORS.blue,   filled: hasCold  },
+                  { field: 'hot',   label: 'Quente (Pq)', placeholder: isTruck ? 'Ex: 9.5' : 'Ex: 30.5', color: COLORS.orange, filled: hasHot   },
+                  { field: 'ideal', label: 'Ideal  (T)',  placeholder: isTruck ? 'Ex: 9.0' : 'Ex: 29.5', color: COLORS.green,  filled: hasIdeal },
                 ].map(({ field, label, placeholder, color, filled }) => (
                   <div key={field} style={{ marginBottom: 7 }}>
                     <div style={{
@@ -1801,7 +1818,7 @@ export default function PneusTab({
                                 <select value={entry.composto}
                                   onChange={(e) => updateCompoundField(entry.id, 'composto', e.target.value)}
                                   style={SELECT_STYLE}>
-                                  {COMPOUND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                  {activeCompounds.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                               </Field>
                             </div>

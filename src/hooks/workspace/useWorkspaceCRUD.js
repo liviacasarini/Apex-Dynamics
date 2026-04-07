@@ -5,7 +5,12 @@
  * Pure function — no React hooks inside.
  */
 
-import { DEFAULT_VITALS_LIMITS } from '@/constants/vitals';
+import { DEFAULT_VITALS_LIMITS, DEFAULT_VITALS_LIMITS_TRUCK } from '@/constants/vitals';
+
+function getDefaultVitals(vehicleType) {
+  if (vehicleType === 'truck') return DEFAULT_VITALS_LIMITS_TRUCK;
+  return DEFAULT_VITALS_LIMITS;
+}
 
 export function createWorkspaceCRUD(update) {
   const createWorkspace = (name, vehicleType = 'car') => {
@@ -18,7 +23,7 @@ export function createWorkspaceCRUD(update) {
       activeWorkspaceId: id,
       workspaces: [
         ...prev.workspaces,
-        { id, name: trimmed, vehicleType: vt, activeProfileId: null, activeTab: 'overview', vitalsLimits: DEFAULT_VITALS_LIMITS, savedReports: [], tempLog: [], tempSets: [], profiles: [] },
+        { id, name: trimmed, vehicleType: vt, activeProfileId: null, activeTab: 'overview', vitalsLimits: getDefaultVitals(vt), savedReports: [], tempLog: [], tempSets: [], profiles: [] },
       ],
     }));
     return { id };
