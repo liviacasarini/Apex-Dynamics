@@ -27,7 +27,8 @@ import { readAssignedPilot } from '@/core/crossTabSync';
 const STORAGE_KEY  = 'rt_peso_';
 const FUEL_KEY     = 'rt_fuel_';
 const G            = 9.81;   // m/s²
-const FUEL_DENSITY = 0.74;   // kg/L
+const FUEL_DENSITY       = 0.74;   // kg/L (gasolina)
+const FUEL_DENSITY_TRUCK = 0.832;  // kg/L (diesel)
 
 const EMPTY = {
   // Pesos gerais
@@ -61,10 +62,56 @@ const EMPTY = {
   tanqueAlt:     '',  // mm do solo
 };
 
+const EMPTY_TRUCK = {
+  // Pesos gerais
+  pesoHomologado:  '',  // kg mínimo regulamentar
+  pesoPiloto:      '',  // kg com equipamentos
+  pesoCarro:       '',  // kg seco (sem piloto, sem comb.)
+  // Ballast
+  ballast:         [],  // [{ id, name, mass, x, y, z }]
+  // Por eixo
+  pesoDianteiro:   '',  // kg
+  pesoTraseiro:    '',  // kg
+  // Não-suspenso por eixo (2 eixos: Dianteiro/Traseiro)
+  rodaDiant: '', rodaTras: '',
+  freioDiant: '', freioTras: '',
+  suspDiant: '', suspTras: '',
+  massaRotacional: '',  // kg
+  // Parâmetros para cálculo de transferência
+  alturaCG:        '',  // mm (calculado/estimado)
+  alturaCGMedido:  '',  // mm (medido em balança)
+  wheelbase:       '',  // mm
+  trackFront:      '',  // mm
+  trackRear:       '',  // mm
+  rollCenterFront: '',  // mm
+  rollCenterRear:  '',  // mm
+  // Inércia
+  inerciYaw:   '',  // kg·m²
+  inerciRoll:  '',  // kg·m²
+  inerciPitch: '',  // kg·m²
+  // Tanque (fuel CG effect)
+  tanqueLongPos: '',  // mm do eixo dianteiro (positivo = para trás)
+  tanqueAlt:     '',  // mm do solo
+};
+
 /* ─── helpers de cálculo ─────────────────────────────────────────── */
 function pf(v) { const n = parseFloat(v); return isNaN(n) ? null : n; }
 
-function calcUnsprung(d) {
+function calcUnsprung(d, isTruck = false) {
+  if (isTruck) {
+    const axles = ['Diant', 'Tras'];
+    // Dianteiro = 2 rodas por eixo, Traseiro = 2 rodas por eixo (simplified)
+    let total = 0; let ok = true;
+    for (const c of axles) {
+      const roda  = pf(d[`roda${c}`]);
+      const freio = pf(d[`freio${c}`]);
+      const susp  = pf(d[`susp${c}`]);
+      if (roda === null || freio === null || susp === null) { ok = false; break; }
+      total += (roda + freio + susp) * 2; // 2 wheels per axle
+    }
+    const rot = pf(d.massaRotacional) || 0;
+    return ok ? total + rot : null;
+  }
   const corners = ['FL','FR','RL','RR'];
   let total = 0; let ok = true;
   for (const c of corners) {
@@ -169,7 +216,7 @@ function buildLoadTransferData(rows, channels, d) {
   return result;
 }
 
-function calcFuelCGEffect(d, fuelPerLap, maxLaps) {
+function calcFuelCGEffect(d, fuelPerLap, maxLaps, fuelDensity = FUEL_DENSITY) {
   const longPos = pf(d.tanqueLongPos);
   const alt     = pf(d.tanqueAlt);
   const m       = massaTotal(d);
@@ -179,7 +226,7 @@ function calcFuelCGEffect(d, fuelPerLap, maxLaps) {
 
   const result = [];
   for (let lap = 0; lap <= maxLaps; lap++) {
-    const fuelBurned = fuelPerLap * lap * FUEL_DENSITY; // kg
+    const fuelBurned = fuelPerLap * lap * fuelDensity; // kg
     const mNew = m - fuelBurned;
     if (mNew <= 0) break;
     // Longitudinal CG shift (simplified: tank position relative to CG)
@@ -326,9 +373,32 @@ function CornerGrid({ label, prefix, d, onField, C, IB }) {
   );
 }
 
+function AxleGrid({ label, prefix, d, onField, C, IB }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <SubTitle C={C}>{label}</SubTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxWidth: 400 }}>
+        {['Diant','Tras'].map(c => (
+          <Field
+            key={c}
+            label={c === 'Diant' ? 'Dianteiro' : 'Traseiro'}
+            value={d[`${prefix}${c}`]}
+            onChange={onField(`${prefix}${c}`)}
+            unit="kg"
+            C={C} IB={IB} half
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── componente principal ──────────────────────────────────────── */
-export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot, profileWeightLoad }) {
+export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot, profileWeightLoad, vehicleType = 'truck' }) {
   const C   = useColors();
+  const isTruck = vehicleType === 'truck';
+  const EMPTY_BASE = isTruck ? EMPTY_TRUCK : EMPTY;
+  const activeFuelDensity = isTruck ? FUEL_DENSITY_TRUCK : FUEL_DENSITY;
   const profileId = activeProfile?.id || 'default';
   const {
     pesoCarro:  ctxPesoCarro,  setPesoCarro,
@@ -361,13 +431,14 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
   };
 
   /* ── estado ── */
-  const [d, setD]       = useState(EMPTY);
+  const [d, setD]       = useState(EMPTY_BASE);
   const [lapSel, setLapSel] = useState('');
   const [section, setSection] = useState('pesos'); // 'pesos' | 'transfer' | 'inercia'
   const [saveName, setSaveName] = useState('');
 
   /* ── persistência ── */
-  const key = `${STORAGE_KEY}${profileId}`;
+  const storagePrefix = isTruck ? 'rt_peso_truck_' : 'rt_peso_';
+  const key = `${storagePrefix}${profileId}`;
 
   useEffect(() => {
     try {
@@ -380,7 +451,7 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
         if (ctxWheelbase)  overrides.wheelbase  = ctxWheelbase;
         if (ctxTrackFront) overrides.trackFront = ctxTrackFront;
         if (ctxTrackRear)  overrides.trackRear  = ctxTrackRear;
-        const loaded = { ...EMPTY, ...saved, ...overrides };
+        const loaded = { ...EMPTY_BASE, ...saved, ...overrides };
         setD(loaded);
         const hasOverrides = Object.keys(overrides).length > 0;
         if (hasOverrides) localStorage.setItem(key, JSON.stringify(loaded));
@@ -489,7 +560,7 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
   // Carregar snapshot vindo da aba Perfis
   useEffect(() => {
     if (profileWeightLoad?.seq > 0 && profileWeightLoad?.data) {
-      const loaded = { ...EMPTY, ...profileWeightLoad.data };
+      const loaded = { ...EMPTY_BASE, ...profileWeightLoad.data };
       persist(loaded);
       if (loaded.pesoCarro)       setPesoCarro(loaded.pesoCarro);
       if (loaded.pesoPiloto)      setPesoPiloto(loaded.pesoPiloto);
@@ -569,7 +640,7 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
     pesoPiloto: d.pesoPiloto || assignedPilot?.weightEquipped || '',
   }), [d, assignedPilot]);
 
-  const unsprung = useMemo(() => calcUnsprung(d), [d]);
+  const unsprung = useMemo(() => calcUnsprung(d, isTruck), [d, isTruck]);
   const sprung   = useMemo(() => calcSprung(d, unsprung), [d, unsprung]);
   const distrib  = useMemo(() => calcDistribuicao(d), [d]);
   const ballastCG = useMemo(() => calcBallastCG(d.ballast), [d.ballast]);
@@ -636,9 +707,26 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
       })();
       const raceLaps = parseFloat(sc.raceLaps) || 20;
       if (!perLap) return null;
-      return calcFuelCGEffect(d, perLap, raceLaps);
+      return calcFuelCGEffect(d, perLap, raceLaps, activeFuelDensity);
     } catch { return null; }
-  }, [d, profileId]);
+  }, [d, profileId, activeFuelDensity]);
+
+  /* ── rollover warning (truck) ── */
+  const rolloverWarning = useMemo(() => {
+    if (!isTruck || !transferStats) return false;
+    const mf = pf(d.pesoDianteiro);
+    const mr = pf(d.pesoTraseiro);
+    if (!mf || !mr) return false;
+    // weight per wheel (2 wheels per axle)
+    const weightPerWheelFront = (mf * G) / 2;
+    const weightPerWheelRear  = (mr * G) / 2;
+    const latFMax = Math.abs(parseFloat(transferStats.latF.max) || 0) * G;
+    const latRMax = Math.abs(parseFloat(transferStats.latR.max) || 0) * G;
+    const latFMin = Math.abs(parseFloat(transferStats.latF.min) || 0) * G;
+    const latRMin = Math.abs(parseFloat(transferStats.latR.min) || 0) * G;
+    return (Math.max(latFMax, latFMin) > weightPerWheelFront) ||
+           (Math.max(latRMax, latRMin) > weightPerWheelRear);
+  }, [isTruck, transferStats, d.pesoDianteiro, d.pesoTraseiro]);
 
   /* ── jacking force ── */
   const jacking = useMemo(() => calcJacking(d), [d]);
@@ -807,7 +895,8 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
           <Section title="Pesos Gerais" C={C} color={C.accent}>
             <Row>
               <Field label="Peso total homologado (mínimo regulamentar)" value={d.pesoHomologado}
-                onChange={set('pesoHomologado')} unit="kg" C={C} IB={IB} half />
+                onChange={set('pesoHomologado')} unit="kg" C={C} IB={IB} half
+                placeholder={isTruck ? '5300' : ''} />
               {/* ── Seletor de piloto + campo de peso ── */}
               <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                 <Label C={C}>Peso piloto + equipamentos (kg)</Label>
@@ -841,6 +930,7 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
               </div>
               <Field label="Peso carro seco (sem piloto, sem comb.)" value={d.pesoCarro}
                 onChange={set('pesoCarro')} unit="kg" C={C} IB={IB} half
+                placeholder={isTruck ? '5000' : ''}
                 highlight={violaRegulamento} highlightColor="#ff4444" />
             </Row>
             <Row>
@@ -983,13 +1073,24 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
             )}
           </Section>
 
-          <Section title="Massa Não-Suspenso (Unsprung Mass)" C={C} color={C.orange}>
+          <Section title={isTruck ? "Massa Não-Suspenso — Por Eixo (Unsprung Mass)" : "Massa Não-Suspenso (Unsprung Mass)"} C={C} color={C.orange}>
             <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 12 }}>
               Componentes não amortecidos: rodas, pneus, freios, partes de suspensão abaixo do amortecedor.
+              {isTruck && <><br />Modo caminhão: valores por eixo (cada valor multiplicado por 2 rodas).</>}
             </div>
-            <CornerGrid label="Roda + Pneu por canto"        prefix="roda"  d={d} onField={set} C={C} IB={IB} />
-            <CornerGrid label="Freio (disco + pinça) por canto" prefix="freio" d={d} onField={set} C={C} IB={IB} />
-            <CornerGrid label="Suspensão (manga/cubo/mancal) por canto" prefix="susp" d={d} onField={set} C={C} IB={IB} />
+            {isTruck ? (
+              <>
+                <AxleGrid label="Roda + Pneu por eixo"        prefix="roda"  d={d} onField={set} C={C} IB={IB} />
+                <AxleGrid label="Freio (disco + pinça) por eixo" prefix="freio" d={d} onField={set} C={C} IB={IB} />
+                <AxleGrid label="Suspensão (manga/cubo/mancal) por eixo" prefix="susp" d={d} onField={set} C={C} IB={IB} />
+              </>
+            ) : (
+              <>
+                <CornerGrid label="Roda + Pneu por canto"        prefix="roda"  d={d} onField={set} C={C} IB={IB} />
+                <CornerGrid label="Freio (disco + pinça) por canto" prefix="freio" d={d} onField={set} C={C} IB={IB} />
+                <CornerGrid label="Suspensão (manga/cubo/mancal) por canto" prefix="susp" d={d} onField={set} C={C} IB={IB} />
+              </>
+            )}
             <Row>
               <Field label="Peso rotacional (volante motor, etc.)" value={d.massaRotacional}
                 onChange={set('massaRotacional')} unit="kg" C={C} IB={IB} half />
@@ -1126,6 +1227,26 @@ export default function PesoTab({ activeProfile, data, channels, onSaveSnapshot,
                         <div style={{ fontSize: 10, color: C.textMuted }}>kg-equiv</div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* rollover warning (truck) */}
+                {rolloverWarning && (
+                  <div style={{
+                    background: '#ff222215', border: '1.5px solid #ff4444',
+                    borderRadius: 10, padding: '12px 16px', marginBottom: 12,
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <span style={{ fontSize: 18 }}>&#9888;&#65039;</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#ff4444' }}>
+                        Risco de capotamento
+                      </div>
+                      <div style={{ fontSize: 12, color: '#ff7777', marginTop: 2 }}>
+                        A transferência de carga lateral excede o peso por roda em pelo menos um eixo.
+                        Reduza a altura do CG ou aumente a bitola.
+                      </div>
+                    </div>
                   </div>
                 )}
 

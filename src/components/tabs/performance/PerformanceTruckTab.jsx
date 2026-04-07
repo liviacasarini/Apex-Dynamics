@@ -125,7 +125,8 @@ function Bar({ value, max, color, label, C }) {
 // MOTOR DE CÁLCULO DE PERFORMANCE
 // ══════════════════════════════════════════════════════════════════════════════
 
-function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, pneusSession, regs, mechSpecs, setup, temp, profileParts, profileId }) {
+function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, pneusSession, regs, mechSpecs, setup, temp, profileParts, profileId, vehicleType = 'truck' }) {
+  const isTruck = vehicleType === 'truck';
   const warnings = [];
   const w = (msg) => warnings.push(msg);
 
@@ -165,18 +166,18 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
   if (!cornersLow && !cornersMed && !cornersFast) w('Tipo/quantidade de curvas não preenchido (PistasTab)');
 
   // ── Aerodinâmica (SetupSheet) ──────────────────────────────────────────────
-  const cd          = pf(setup?.aero_cd,          0.90);
-  const cl          = pf(setup?.aero_cl,          1.50);
-  const frontalArea = pf(setup?.aero_frontalArea, 1.20);
+  const cd          = pf(setup?.aero_cd,          isTruck ? 0.60 : 0.90);
+  const cl          = pf(setup?.aero_cl,          isTruck ? 0.15 : 1.50);
+  const frontalArea = pf(setup?.aero_frontalArea, isTruck ? 6.50 : 1.20);
   const dfFrontPct  = pf(setup?.aero_cpLong,      50);   // % no eixo dianteiro
   const dfFront     = pf(setup?.aero_dfFront, 0);
   const dfRear      = pf(setup?.aero_dfRear,  0);
   const aeroBalance = dfFront + dfRear > 0
     ? (dfFront / (dfFront + dfRear) * 100)
     : dfFrontPct;
-  if (!setup?.aero_cd)        w('Cd não preenchido (SetupSheet) — usando 0.90');
-  if (!setup?.aero_cl)        w('Cl não preenchido (SetupSheet) — usando 1.50');
-  if (!setup?.aero_frontalArea) w('Área frontal não preenchida (SetupSheet) — usando 1.20 m²');
+  if (!setup?.aero_cd)          w(isTruck ? 'Cd não preenchido (SetupSheet) — usando 0.60 (caminhão)' : 'Cd não preenchido (SetupSheet) — usando 0.90');
+  if (!setup?.aero_cl)          w(isTruck ? 'Cl não preenchido (SetupSheet) — usando 0.15 (caminhão, aero mínima)' : 'Cl não preenchido (SetupSheet) — usando 1.50');
+  if (!setup?.aero_frontalArea) w(isTruck ? 'Área frontal não preenchida (SetupSheet) — usando 6.50 m² (caminhão)' : 'Área frontal não preenchida (SetupSheet) — usando 1.20 m²');
 
   // ── Transmissão (SetupSheet) ───────────────────────────────────────────────
   const gears = [1,2,3,4,5,6,7,8].map(i => pf(setup?.[`trans_gear${i}`], 0)).filter(g => g > 0);
@@ -191,8 +192,8 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
   const motorPotKW   = motorPotCV * 0.7355;
   const motorRpmMax  = pf(regs?.motorRpmMax, 0);
   const boostMax     = pf(regs?.motorBoostMax, 0);
-  if (!motorPotCV)  w('Potência máxima não preenchida (Regulamentações) — aceleração estimada');
-  if (!motorRpmMax) w('RPM máximo não preenchido (Regulamentações)');
+  if (!motorPotCV)  w(isTruck ? 'Potência máxima não preenchida (Regulamentações) — caminhão padrão ~1100 cv' : 'Potência máxima não preenchida (Regulamentações) — aceleração estimada');
+  if (!motorRpmMax) w(isTruck ? 'RPM máximo não preenchido (Regulamentações) — caminhão padrão ~2400 rpm' : 'RPM máximo não preenchido (Regulamentações)');
 
   // ── Turbo (SetupSheet) ─────────────────────────────────────────────────────
   const turboLag     = pf(setup?.turbo_lag,          200); // ms
@@ -265,7 +266,7 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
       }
     });
   }
-  if (!muPad) { muPad = 0.40; w('Coef. de atrito da pastilha não preenchido (Mecânica) — usando 0.40'); }
+  if (!muPad) { muPad = isTruck ? 0.35 : 0.40; w(isTruck ? 'Coef. de atrito da pastilha não preenchido (Mecânica) — usando 0.35 (caminhão, freio pneumático)' : 'Coef. de atrito da pastilha não preenchido (Mecânica) — usando 0.40'); }
   if (!tempMaxPad) w('Temperatura máxima da pastilha não preenchida (Mecânica)');
   // Fallback regs
   if (!discDiamFront) discDiamFront = pf(regs?.freioDiantDiamMax, 330);
@@ -614,8 +615,9 @@ function computePerformance({ peso, fuel, track, trackCustom, pilots, pneusLib, 
 // COMPONENTE PRINCIPAL
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function PerformanceTab({ activeProfile, profileParts = [] }) {
+export default function PerformanceTab({ activeProfile, profileParts = [], vehicleType = 'truck' }) {
   const C = useColors();
+  const isTruck = vehicleType === 'truck';
   const profileId = activeProfile?.id || 'default';
 
   const [showWarnings, setShowWarnings] = useState(false);
@@ -656,9 +658,9 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
 
   const result = useMemo(() => computePerformance({
     peso, fuel: fuelScen, track, trackCustom, pilots, pneusLib: selectedPneusLib, pneusSession,
-    regs, mechSpecs, setup, temp, profileParts, profileId,
+    regs, mechSpecs, setup, temp, profileParts, profileId, vehicleType,
   }), [peso, fuelScen, track, trackCustom, pilots, selectedPneusLib, pneusSession,
-       regs, mechSpecs, setup, temp, profileParts, profileId]);
+       regs, mechSpecs, setup, temp, profileParts, profileId, vehicleType]);
 
   const {
     warnings, filledVars, totalVars,
@@ -705,7 +707,7 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.textPrimary }}>
-          🏎️ Análise de Performance
+          {isTruck ? '🚛' : '🏎️'} Análise de Performance {isTruck ? '— Caminhão' : ''}
         </div>
         <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
           Análise teórica com base em todas as configurações do perfil ativo
@@ -962,7 +964,7 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
           BLOCO 2 — BALANÇO MECÂNICO E AERODINÂMICO
       ══════════════════════════════════════════════════════════════════════ */}
       {show('balance') && (
-        <Card title="Balanço Mecânico & Aerodinâmico" icon="⚖️" C={C} accent={C.purple || '#aa44ff'}>
+        <Card title={isTruck ? 'Balanço Mecânico (aero mínima em caminhão)' : 'Balanço Mecânico & Aerodinâmico'} icon="⚖️" C={C} accent={C.purple || '#aa44ff'}>
           <Grid2>
             {/* Ride frequency */}
             <div>
@@ -993,9 +995,16 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
           </Grid2>
 
           <div style={{ marginTop: 12 }}>
-            <MetricRow label="Balanço aerodinâmico" value={aeroBalance > 0 ? `${fmt1(aeroBalance)}% diant.` : '—'} C={C}
-              warn={!aeroBalance ? 'Preencha dfFront/dfRear no SetupSheet' : null} />
-            <MetricRow label="Aero vs. mecânico" value={aeroVsMech} C={C} />
+            {!isTruck && (
+              <MetricRow label="Balanço aerodinâmico" value={aeroBalance > 0 ? `${fmt1(aeroBalance)}% diant.` : '—'} C={C}
+                warn={!aeroBalance ? 'Preencha dfFront/dfRear no SetupSheet' : null} />
+            )}
+            {!isTruck && (
+              <MetricRow label="Aero vs. mecânico" value={aeroVsMech} C={C} />
+            )}
+            {isTruck && (
+              <MetricRow label="Aerodinâmica" value="Mínima (caminhão — sem downforce significativo)" C={C} />
+            )}
             <MetricRow label="Ride height dianteiro" value={rideHeightFront > 0 ? `${rideHeightFront} mm` : '—'} C={C}
               highlight={rideOkFront === false ? '#ff4444' : rideOkFront === true ? C.green : C.textPrimary} />
             <MetricRow label="Ride height traseiro" value={rideHeightRear > 0 ? `${rideHeightRear} mm` : '—'} C={C}
@@ -1101,7 +1110,7 @@ export default function PerformanceTab({ activeProfile, profileParts = [] }) {
           BLOCO 4 — FRENAGEM
       ══════════════════════════════════════════════════════════════════════ */}
       {show('brakes') && (
-        <Card title="Performance de Frenagem" icon="🛑" C={C} accent="#ff5555">
+        <Card title={isTruck ? 'Performance de Frenagem (Pneumático + Retarder)' : 'Performance de Frenagem'} icon="🛑" C={C} accent="#ff5555">
           <Grid2>
             <div>
               <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Distância de parada — 100 km/h</div>

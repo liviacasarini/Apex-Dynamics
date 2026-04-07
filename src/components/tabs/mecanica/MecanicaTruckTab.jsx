@@ -19,6 +19,26 @@ const CATEGORY_META = {
   'outro':         { icon: '📦', label: 'Outro' },
 };
 
+/* ─── Categorias fixas — Copa Truck ────────────────────────────────────── */
+const FIXED_CATEGORIES_TRUCK = [
+  'suspensão', 'motor', 'transmissão', 'freio', 'turbo', 'retarder',
+  'pneumático', 'arrefecimento', 'elétrica', 'chassi', 'outro'
+];
+
+const CATEGORY_META_TRUCK = {
+  'suspensão':     { icon: '🔩', label: 'Suspensão Pneumática' },
+  'motor':         { icon: '🔥', label: 'Motor Diesel' },
+  'transmissão':   { icon: '⚙️', label: 'Transmissão' },
+  'freio':         { icon: '🛑', label: 'Freio Pneumático' },
+  'turbo':         { icon: '💨', label: 'Turbocompressor' },
+  'retarder':      { icon: '🔄', label: 'Retarder' },
+  'pneumático':    { icon: '🌬️', label: 'Sistema Pneumático' },
+  'arrefecimento': { icon: '❄️', label: 'Arrefecimento' },
+  'elétrica':      { icon: '⚡', label: 'Elétrica (24V)' },
+  'chassi':        { icon: '🏗️', label: 'Chassi' },
+  'outro':         { icon: '📦', label: 'Outro' },
+};
+
 const ALARM_THRESHOLD = 0.96;
 
 const PART_STATUS_KEY  = (id) => `rt_part_status_${id  || 'global'}`;
@@ -1305,6 +1325,7 @@ function CategoryBox({
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 export default function MecanicaTab({
+  vehicleType = 'truck',
   profileParts = [],
   activeProfileId,
   customPartCategories = [],
@@ -1323,6 +1344,10 @@ export default function MecanicaTab({
   onDeleteMechanicSnapshot,
   onLoadMechanicSnapshot,
 }) {
+  const isTruck = vehicleType === 'truck';
+  const _FIXED_CATS = isTruck ? FIXED_CATEGORIES_TRUCK : FIXED_CATEGORIES;
+  const _CAT_META   = isTruck ? CATEGORY_META_TRUCK    : CATEGORY_META;
+
   const COLORS = useColors();
   const theme = makeTheme(COLORS);
   const INPUT_S = {
@@ -1556,7 +1581,7 @@ export default function MecanicaTab({
 
   // Todas as categorias: fixas + customizadas
   const allCategories = [
-    ...FIXED_CATEGORIES.map((k) => ({ key: k, ...CATEGORY_META[k], isCustom: false })),
+    ..._FIXED_CATS.map((k) => ({ key: k, ..._CAT_META[k], isCustom: false })),
     ...customPartCategories.map((k) => ({
       key: k,
       icon: '🏷️',
@@ -1669,7 +1694,7 @@ export default function MecanicaTab({
   function handleAddCategory() {
     const trimmed = newCatName.trim().toLowerCase();
     if (!trimmed) { setNewCatErr('Digite um nome para a categoria.'); return; }
-    if (FIXED_CATEGORIES.includes(trimmed) || customPartCategories.includes(trimmed)) {
+    if (_FIXED_CATS.includes(trimmed) || customPartCategories.includes(trimmed)) {
       setNewCatErr('Essa categoria já existe.'); return;
     }
     onAddCustomCategory?.(trimmed, activeProfileId);
@@ -2243,7 +2268,7 @@ export default function MecanicaTab({
                       <div>
                         <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>{ct.name}</span>
                         <span style={{ fontSize: 11, color: COLORS.textMuted, marginLeft: 8 }}>
-                          {CATEGORY_META[ct.category]?.label || ct.category} · {ct.kmLimit.toLocaleString('pt-BR')} km · {ct.fields.length} campos
+                          {_CAT_META[ct.category]?.label || ct.category} · {ct.kmLimit.toLocaleString('pt-BR')} km · {ct.fields.length} campos
                         </span>
                       </div>
                       <button
@@ -2305,7 +2330,7 @@ export default function MecanicaTab({
                     const pct = p.kmLimit > 0 ? Math.min(100, (kmUsed / p.kmLimit) * 100) : 0;
                     const pctColor = pct >= 96 ? COLORS.accent : pct >= 80 ? COLORS.yellow : COLORS.green;
                     const price = partPrices[p.id];
-                    const catMeta = CATEGORY_META[p.category] || CATEGORY_META['outro'];
+                    const catMeta = _CAT_META[p.category] || _CAT_META['outro'];
                     return (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${COLORS.border}22`, background: i % 2 === 0 ? 'transparent' : `${COLORS.border}11` }}>
                         <td style={{ padding: '8px 10px', fontWeight: 600, color: COLORS.textPrimary, whiteSpace: 'nowrap', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</td>

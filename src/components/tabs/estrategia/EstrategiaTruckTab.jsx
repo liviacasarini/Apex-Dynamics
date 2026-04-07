@@ -68,6 +68,14 @@ const COMPOUND_LABEL = {
   'radial': 'Radial',
 };
 
+const COMPOUND_LABEL_TRUCK = {
+  'truck-soft': 'Macio',
+  'truck-medium': 'Médio',
+  'truck-hard': 'Duro',
+  'truck-rain': 'Chuva',
+  'intermediario': 'Intermediário',
+};
+
 /* ─── helpers ────────────────────────────────────────────────────── */
 
 const pf = (v) => parseFloat(v) || 0;
@@ -98,8 +106,10 @@ const Row = ({ children }) => (
 
 /* ─── componente principal ───────────────────────────────────────── */
 
-export default function EstrategiaTab({ activeProfile }) {
+export default function EstrategiaTab({ activeProfile, vehicleType = 'truck' }) {
   const C = useColors();
+  const isTruck = vehicleType === 'truck';
+  const activeCompoundLabel = isTruck ? COMPOUND_LABEL_TRUCK : COMPOUND_LABEL;
   const theme = makeTheme(C);
   const IB = {
     background: C.bg,
@@ -120,7 +130,7 @@ export default function EstrategiaTab({ activeProfile }) {
 
   const [d, setD] = useState(EMPTY);
 
-  const key = `rt_strategy_${profileId}`;
+  const key = `${isTruck ? 'rt_strategy_truck_' : 'rt_strategy_'}${profileId}`;
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || 'null');
@@ -141,7 +151,7 @@ export default function EstrategiaTab({ activeProfile }) {
 
   const importedFuel = useMemo(() => {
     try {
-      const s = JSON.parse(localStorage.getItem(`rt_fuel_${profileId}`) || '[]');
+      const s = JSON.parse(localStorage.getItem(`${isTruck ? 'rt_fuel_truck_' : 'rt_fuel_'}${profileId}`) || '[]');
       return s[0] || {};
     } catch { return {}; }
   }, [profileId]);
@@ -409,25 +419,25 @@ export default function EstrategiaTab({ activeProfile }) {
             <input type="number" value={d.raceLaps} onChange={set('raceLaps')} placeholder="Ex: 30" style={IB} />
           </Field>
           <Field label="Tempo base da volta" unit="s" C={C} half>
-            <input type="number" step="0.001" value={d.baselapTime} onChange={set('baselapTime')} placeholder="Ex: 78.500" style={IB} />
+            <input type="number" step="0.001" value={d.baselapTime} onChange={set('baselapTime')} placeholder={isTruck ? 'Ex: 120.000' : 'Ex: 78.500'} style={IB} />
           </Field>
         </Row>
         <Row>
           <Field label="Tempo parado no pit" unit="s" C={C} half>
-            <input type="number" step="0.1" value={d.pitStopTime} onChange={set('pitStopTime')} placeholder="Ex: 2.5" style={IB} />
+            <input type="number" step="0.1" value={d.pitStopTime} onChange={set('pitStopTime')} placeholder={isTruck ? 'Ex: 45' : 'Ex: 2.5'} style={IB} />
           </Field>
           <Field label="Pit lane delta total" unit="s" C={C} half>
-            <input type="number" step="0.1" value={d.pitLaneDelta} onChange={set('pitLaneDelta')} placeholder="Ex: 22" style={IB} />
+            <input type="number" step="0.1" value={d.pitLaneDelta} onChange={set('pitLaneDelta')} placeholder={isTruck ? 'Ex: 60' : 'Ex: 22'} style={IB} />
           </Field>
         </Row>
         <Row>
           <Field label="Velocidade pit lane" unit="km/h" C={C} half>
             <input type="number" value={d.pitSpeedLimit} onChange={set('pitSpeedLimit')}
-              placeholder={(() => { const at = readActiveTrack(profileId); return at?.pitSpeedLimit ? `${at.pitSpeedLimit} (Pistas)` : 'Ex: 60'; })()}
+              placeholder={(() => { const at = readActiveTrack(profileId); return at?.pitSpeedLimit ? `${at.pitSpeedLimit} (Pistas)` : (isTruck ? 'Ex: 60' : 'Ex: 60'); })()}
               style={IB} />
           </Field>
           <Field label="Tempo por kg de combustível" unit="s/kg/volta" C={C} half>
-            <input type="number" step="0.001" value={d.fuelTimePerKg} onChange={set('fuelTimePerKg')} placeholder="Ex: 0.035" style={IB} />
+            <input type="number" step="0.001" value={d.fuelTimePerKg} onChange={set('fuelTimePerKg')} placeholder={isTruck ? 'Ex: 0.04' : 'Ex: 0.035'} style={IB} />
           </Field>
         </Row>
         <Row>
@@ -499,12 +509,12 @@ export default function EstrategiaTab({ activeProfile }) {
                 style={{ ...IB, cursor: 'pointer' }}
               >
                 <option value="">— Composto —</option>
-                {importedCompounds.filter(c => c.composto).map(c => (
+                {!isTruck && importedCompounds.filter(c => c.composto).map(c => (
                   <option key={c.id} value={c.composto}>
-                    {COMPOUND_LABEL[c.composto] || c.composto}{c.fabricante ? ` (${c.fabricante})` : ''}
+                    {activeCompoundLabel[c.composto] || c.composto}{c.fabricante ? ` (${c.fabricante})` : ''}
                   </option>
                 ))}
-                {importedCompounds.length === 0 && Object.entries(COMPOUND_LABEL).map(([k, v]) => (
+                {(isTruck || importedCompounds.length === 0) && Object.entries(activeCompoundLabel).map(([k, v]) => (
                   <option key={k} value={k}>{v}</option>
                 ))}
               </select>

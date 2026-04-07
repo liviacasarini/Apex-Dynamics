@@ -17,7 +17,8 @@ import { getCrossTabData, TRACK_SELECTED_EVENT, readActiveTrack } from '@/core/c
 import { useCarWeight } from '@/context/CarWeightContext';
 
 /* ─── constantes ─────────────────────────────────────────────────── */
-const STORAGE_PREFIX = 'rt_fuel_';
+const STORAGE_PREFIX_CAR   = 'rt_fuel_';
+const STORAGE_PREFIX_TRUCK = 'rt_fuel_truck_';
 
 const FUEL_TYPES = [
   { value: 'gasolina',  label: 'Gasolina (RON 98)',     density: 0.740, energyMJL: 32.0 },
@@ -28,9 +29,16 @@ const FUEL_TYPES = [
   { value: 'custom',    label: 'Personalizado',         density: null,  energyMJL: null  },
 ];
 
-function getFuelType(s)    { return FUEL_TYPES.find(f => f.value === (s.fuelType || 'gasolina')) || FUEL_TYPES[0]; }
-function getFuelDensity(s) { return s.fuelType === 'custom' ? (parseFloat(s.fuelDensityCustom) || 0.74) : getFuelType(s).density; }
-function getFuelEnergy(s)  { return s.fuelType === 'custom' ? (parseFloat(s.energyDensityCustom) || null) : getFuelType(s).energyMJL; }
+const FUEL_TYPES_TRUCK = [
+  { value: 'diesel-s10',  label: 'Diesel S10',           density: 0.832, energyMJL: 35.8 },
+  { value: 'diesel-s50',  label: 'Diesel S50',           density: 0.840, energyMJL: 35.5 },
+  { value: 'diesel-s500', label: 'Diesel S500',          density: 0.845, energyMJL: 35.3 },
+  { value: 'custom',      label: 'Personalizado',        density: null,  energyMJL: null  },
+];
+
+function getFuelType(s, fuelTypes)    { return fuelTypes.find(f => f.value === (s.fuelType || fuelTypes[0].value)) || fuelTypes[0]; }
+function getFuelDensity(s, fuelTypes) { return s.fuelType === 'custom' ? (parseFloat(s.fuelDensityCustom) || 0.74) : getFuelType(s, fuelTypes).density; }
+function getFuelEnergy(s, fuelTypes)  { return s.fuelType === 'custom' ? (parseFloat(s.energyDensityCustom) || null) : getFuelType(s, fuelTypes).energyMJL; }
 
 const EMPTY_SCENARIO = {
   id: null,
@@ -83,8 +91,8 @@ function calcTotalFuel(s) {
   return perLap * raceLaps + margin;
 }
 
-function calcWeights(s) {
-  const density    = getFuelDensity(s);
+function calcWeights(s, fuelTypes) {
+  const density    = getFuelDensity(s, fuelTypes);
   const totalFuel  = calcTotalFuel(s);
   const carW       = parseFloat(s.carWeight);
   const driverW    = parseFloat(s.driverWeight);
@@ -109,14 +117,14 @@ function calcRefills(s, totalFuel) {
   return { fills, loaded: +loaded.toFixed(2), actualSurpl, refuelTimeFull, refuelTimePerLiter };
 }
 
-function calcCGShift(s, totalFuel) {
+function calcCGShift(s, totalFuel, fuelTypes) {
   const tankX   = parseFloat(s.tankPosX);
   const cgX     = parseFloat(s.cgCarX);
   const wb      = parseFloat(s.wheelbaseLen);
   const carW    = parseFloat(s.carWeight);
   const driverW = parseFloat(s.driverWeight) || 0;
   if ([tankX, cgX, wb, carW].some(isNaN) || wb <= 0 || totalFuel === null) return null;
-  const density  = getFuelDensity(s);
+  const density  = getFuelDensity(s, fuelTypes);
   const margin   = parseFloat(s.safetyMargin) || 0;
   const baseW    = carW + driverW;
   const fwStart  = totalFuel * density;
@@ -210,8 +218,12 @@ export default function CombustivelTab({
   profileFuelCalcs = [],
   onDeleteFuelCalc,
   onLoadFuelCalc,
+  vehicleType = 'truck',
 }) {
   const COLORS = useColors();
+  const isTruck = vehicleType === 'truck';
+  const activeFuelTypes = isTruck ? FUEL_TYPES_TRUCK : FUEL_TYPES;
+  const STORAGE_PREFIX = isTruck ? STORAGE_PREFIX_TRUCK : STORAGE_PREFIX_CAR;
   const profileId = activeProfile?.id || 'default';
   const {
     pesoCarro: ctxPesoCarro, setPesoCarro,
@@ -317,12 +329,14 @@ export default function CombustivelTab({
       } else {
         const first = newScenario();
         first.name = 'Cenário 1';
+        if (isTruck) { first.fuelType = 'diesel-s10'; }
         setScenarios([first]);
         setActiveId(first.id);
       }
     } catch {
       const first = newScenario();
       first.name = 'Cenário 1';
+      if (isTruck) { first.fuelType = 'diesel-s10'; }
       setScenarios([first]);
       setActiveId(first.id);
     }
@@ -474,11 +488,11 @@ export default function CombustivelTab({
   const perLapCalc    = calcPerLap(active);
   const perLapDisplay = parseFloat(active.manualPerLap) || perLapCalc;
   const totalFuel     = calcTotalFuel(active);
-  const { fuelW, totalW, margin, density } = calcWeights(merged);
+  const { fuelW, totalW, margin, density } = calcWeights(merged, activeFuelTypes);
   const refills       = calcRefills(active, totalFuel);
-  const cgShift       = calcCGShift(merged, totalFuel);
-  const fuelEnergy    = getFuelEnergy(active);
-  const fuelTypeInfo  = getFuelType(active);
+  const cgShift       = calcCGShift(merged, totalFuel, activeFuelTypes);
+  const fuelEnergy    = getFuelEnergy(active, activeFuelTypes);
+  const fuelTypeInfo  = getFuelType(active, activeFuelTypes);
 
   const marginColor = margin !== null
     ? (margin >= 0 ? COLORS.green : '#ff4444')
@@ -631,17 +645,17 @@ export default function CombustivelTab({
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <Label COLORS={COLORS}>Tipo de combustível</Label>
             <select
-              value={active.fuelType || 'gasolina'}
+              value={active.fuelType || (isTruck ? 'diesel-s10' : 'gasolina')}
               onChange={(e) => updateField('fuelType')(e.target.value)}
               style={{ ...INPUT_BASE, width: '100%' }}
             >
-              {FUEL_TYPES.map(f => (
+              {activeFuelTypes.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </select>
           </div>
           {/* Capacidade do tanque */}
-          <Field label="Capacidade do tanque" value={active.tankCapacity} onChange={updateField('tankCapacity')} unit="L" placeholder="100" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
+          <Field label="Capacidade do tanque" value={active.tankCapacity} onChange={updateField('tankCapacity')} unit="L" placeholder={isTruck ? '120' : '100'} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
           {/* Pit flow rate */}
           <Field label="Flow rate abastecimento" value={active.pitFlowRate} onChange={updateField('pitFlowRate')} unit="L/s" placeholder="12" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
         </div>
@@ -697,7 +711,7 @@ export default function CombustivelTab({
             Método Teórico — consumo médio por volta
           </div>
           <div style={{ ...fieldRow }}>
-            <Field label="Consumo por volta" value={active.consumptionRate} onChange={updateField('consumptionRate')} unit="L/volta" placeholder="2.5" COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
+            <Field label="Consumo por volta" value={active.consumptionRate} onChange={updateField('consumptionRate')} unit="L/volta" placeholder={isTruck ? '3.0' : '2.5'} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
           </div>
         </div>
 
@@ -901,7 +915,7 @@ export default function CombustivelTab({
         <SectionTitle color={COLORS.green}>⚖️ Peso Total do Carro</SectionTitle>
 
         <div style={fieldRow}>
-          <Field label="Peso do carro (sem combustível)" value={active.carWeight}    onChange={updateField('carWeight')}    unit="kg" placeholder={xt.pesoCarro || '580'} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half highlightColor={violaRegulamento ? '#ff4444' : undefined} />
+          <Field label="Peso do carro (sem combustível)" value={active.carWeight}    onChange={updateField('carWeight')}    unit="kg" placeholder={xt.pesoCarro || (isTruck ? '5000' : '580')} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half highlightColor={violaRegulamento ? '#ff4444' : undefined} />
           {/* ── Peso piloto com seletor ── */}
           <div style={{ flex: '1 1 140px', minWidth: 120 }}>
             <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>
@@ -935,7 +949,7 @@ export default function CombustivelTab({
               style={{ ...INPUT_BASE, width: '100%' }}
             />
           </div>
-          <Field label="Peso mínimo regulamentar"         value={active.minWeight}    onChange={updateField('minWeight')}    unit="kg" placeholder={xt.pesoHomologado || '800'} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
+          <Field label="Peso mínimo regulamentar"         value={active.minWeight}    onChange={updateField('minWeight')}    unit="kg" placeholder={xt.pesoHomologado || (isTruck ? '5400' : '800')} COLORS={COLORS} INPUT_BASE={INPUT_BASE} half />
         </div>
         {(!active.carWeight && xt.pesoCarro) || (!active.driverWeight && xt.pesoPiloto) ? (
           <div style={{ fontSize: 10, color: COLORS.green, marginTop: 4, fontStyle: 'italic' }}>

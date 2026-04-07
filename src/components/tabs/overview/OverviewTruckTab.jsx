@@ -160,6 +160,7 @@ function FuelCalculator({
   avgConsumption, setAvgConsumption,
   raceLaps,    setRaceLaps,
   COLORS, theme,
+  isTruck = false,
 }) {
   const d  = parseFloat(fuelDensity)    || 0;
   const cw = parseFloat(carWeight)      || 0;
@@ -178,7 +179,7 @@ function FuelCalculator({
 
   const fields = [
     { label: 'Densidade do combustível a 25°C', value: fuelDensity, set: setFuelDensity, unit: 'kg/L', placeholder: '0.755' },
-    { label: 'Peso do carro (sem combustível)',  value: carWeight,   set: setCarWeight,   unit: 'kg',   placeholder: '980'   },
+    { label: isTruck ? 'Peso do caminhão (sem combustível)' : 'Peso do carro (sem combustível)',  value: carWeight,   set: setCarWeight,   unit: 'kg',   placeholder: isTruck ? '5500' : '980'   },
     { label: 'Peso do piloto (com equipamento)', value: driverWeight,set: setDriverWeight,unit: 'kg',   placeholder: '80'    },
     { label: 'Litragem de combustível de saída', value: startFuel,   set: setStartFuel,   unit: 'L',    placeholder: '45'    },
     { label: 'Consumo médio por volta',          value: avgConsumption, set: setAvgConsumption, unit: 'L/volta', placeholder: '2.5' },
@@ -301,8 +302,10 @@ export default function OverviewTab({
   pitExitConfig = { speedKmh: 30, rpmMin: 3000 },
   setPitExitConfig,
   hasOutLap = false,
+  vehicleType = 'truck',
 }) {
   const COLORS = useColors();
+  const isTruck = vehicleType === 'truck';
   const theme = makeTheme(COLORS);
   const { pesoCarro: ctxPesoCarro, setPesoCarro, violaRegulamento, excesso, pesoMinimo } = useCarWeight();
   const syncingFromCtx = useRef(false);
@@ -818,7 +821,7 @@ export default function OverviewTab({
               {showManualKm && (
                 <>
                   <p style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
-                    Registre quilometragem nas peças mesmo sem um arquivo de telemetria carregado — útil quando o carro rodou mais sem obtenção de dados.
+                    Registre quilometragem nas peças mesmo sem um arquivo de telemetria carregado — útil quando {isTruck ? 'o caminhão' : 'o carro'} rodou mais sem obtenção de dados.
                   </p>
                   <div style={{ marginBottom: 10 }}>
                     <label style={{ fontSize: 11, color: COLORS.textMuted, display: 'block', marginBottom: 4 }}>Perfil</label>
