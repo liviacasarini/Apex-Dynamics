@@ -27,6 +27,9 @@ export const TABS = [
 
 /* ── Overrides de labels/ícones por tipo de veículo ─────────────── */
 const VEHICLE_TAB_OVERRIDES = {
+  moto: {
+    profiles: { label: 'Motos', icon: '🏍️' },
+  },
   truck: {
     profiles: { label: 'Caminhões', icon: '🚛' },
   },
@@ -35,6 +38,7 @@ const VEHICLE_TAB_OVERRIDES = {
 /** Tipos de veículo disponíveis */
 export const VEHICLE_TYPES = [
   { value: 'car',   label: 'Carro',    icon: '🏎️' },
+  { value: 'moto',  label: 'Moto',     icon: '🏍️' },
   { value: 'truck', label: 'Caminhão', icon: '🚛' },
 ];
 

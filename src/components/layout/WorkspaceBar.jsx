@@ -166,7 +166,7 @@ export default function WorkspaceBar({
                   }}
                 />
               )}
-              {w.vehicleType === 'truck' ? '🚛 ' : ''}{w.name}
+              {w.vehicleType === 'truck' ? '🚛 ' : w.vehicleType === 'moto' ? '🏍️ ' : ''}{w.name}
             </div>
           );
         })}
