@@ -9,7 +9,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '@/context/ThemeContext';
 import { REG_PESO_CHANGED_EVENT, SETUP_REG_CHANGED_EVENT, useCarWeight } from '@/context/CarWeightContext';
 
-const STORAGE_KEY = 'rt_regulations';
+const STORAGE_KEY_CAR = 'rt_regulations';
+const STORAGE_KEY_TRUCK = 'rt_regulations_truck';
 
 /* ── Valores padrão ──────────────────────────────────────────────── */
 const EMPTY = {
@@ -420,6 +421,360 @@ const SECTIONS = [
   },
 ];
 
+/* ── Valores padrão — Truck (Copa Truck) ─────────────────────────── */
+const EMPTY_TRUCK = {
+  /* Peso */
+  pesoMinimo: '',
+  pesoComPiloto: '',
+  pesoDistDiant: '',
+  pesoLastreMax: '',
+  pesoMinimoObs: '',
+
+  /* Dimensões do Caminhão */
+  dimLarguraTotal: '',
+  dimComprimento: '',
+  dimAltura: '',
+  dimWheelbase: '',
+  dimBitolaDiant: '',
+  dimBitolaTrasei: '',
+  dimBalancoDiant: '',
+  dimBalancoTras: '',
+  dimRideHeightMin: '',
+  dimDesc: '',
+
+  /* Motor */
+  motorCilindrada: '',
+  motorCilindros: '',
+  motorArquitetura: '',
+  motorPotenciaMax: '',
+  motorTorqueMax: '',
+  motorRpmMax: '',
+  motorBoostMax: '',
+  motorFabricantes: '',
+  motorECU: '',
+  motorDesc: '',
+
+  /* Transmissão */
+  transmMarchasMax: '',
+  transmTipo: '',
+  transmFabricante: '',
+  transmRetarder: '',
+  transmDesc: '',
+
+  /* Freios */
+  freioSistema: '',
+  freioABS: '',
+  freioDiantDiamMax: '',
+  freioTrasDiamMax: '',
+  freioMaterial: '',
+  freioRetarderEscape: '',
+  freioDesc: '',
+
+  /* Combustível */
+  combustivelTipo: '',
+  combustivelCetano: '',
+  combustivelTempMax: '',
+  combustivelMax: '',
+  combustivelObs: '',
+
+  /* Pneus */
+  pneusLargura: '',
+  pneusDiametro: '',
+  pneusFornecedor: '',
+  pneusPressaoMin: '',
+  pneusCompostosMin: '',
+  pneusCompostosMax: '',
+  pneusObs: '',
+
+  /* Segurança */
+  segGaiola: '',
+  segCinto: '',
+  segHANS: '',
+  segExtintor: '',
+  segCelulaComb: '',
+  segCorteMotor: '',
+  segDesc: '',
+
+  /* Pit Stop */
+  pitMecanicosMax: '',
+  pitTempoMinParada: '',
+  pitReabastecimento: '',
+  pitDesc: '',
+
+  /* Homologação */
+  homEntidade: '',
+  homValidade: '',
+  homDesc: '',
+};
+
+/* ── Definição de seções — Truck (Copa Truck) ───────────────────── */
+const SECTIONS_TRUCK = [
+  {
+    title: 'Peso', color: '#4499ff', icon: '⚖️',
+    fields: [
+      {
+        row: [
+          { key: 'pesoMinimo',    label: 'Peso mínimo',    unit: 'kg', type: 'number', placeholder: '5300', flex: 1 },
+          { key: 'pesoComPiloto', label: 'Referência',      unit: '',   type: 'text',   placeholder: 'com piloto / sem piloto', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pesoDistDiant', label: 'Distribuição dianteira mín./máx.', unit: '%',  type: 'text',   placeholder: '45–55', flex: 1 },
+          { key: 'pesoLastreMax', label: 'Lastre máximo',                     unit: 'kg', type: 'number', placeholder: '100',   flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pesoMinimoObs', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: peso pós-corrida com combustível residual', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Dimensões do Caminhão', color: '#ff6688', icon: '📏',
+    fields: [
+      {
+        label: 'Envelope externo',
+        row: [
+          { key: 'dimLarguraTotal', label: 'Largura máxima',     unit: 'mm', type: 'number', placeholder: '2550', flex: 1 },
+          { key: 'dimComprimento',  label: 'Comprimento máximo', unit: 'mm', type: 'number', placeholder: '6500', flex: 1 },
+          { key: 'dimAltura',       label: 'Altura máxima',      unit: 'mm', type: 'number', placeholder: '3000', flex: 1 },
+        ],
+      },
+      {
+        label: 'Geometria',
+        row: [
+          { key: 'dimWheelbase',     label: 'Entre-eixos',          unit: 'mm', type: 'number', placeholder: '3800', flex: 1 },
+          { key: 'dimRideHeightMin', label: 'Altura mínima ao solo', unit: 'mm', type: 'number', placeholder: '200',  flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'dimBitolaDiant',  label: 'Bitola dianteira', unit: 'mm', type: 'number', placeholder: '2100', flex: 1 },
+          { key: 'dimBitolaTrasei', label: 'Bitola traseira',  unit: 'mm', type: 'number', placeholder: '1850', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'dimBalancoDiant', label: 'Balanço dianteiro', unit: 'mm', type: 'number', placeholder: '1200', flex: 1 },
+          { key: 'dimBalancoTras',  label: 'Balanço traseiro',  unit: 'mm', type: 'number', placeholder: '1500', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'dimDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: medição com pneus na posição reta', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Motor', color: '#ffcc44', icon: '🔧',
+    fields: [
+      {
+        label: 'Especificações técnicas',
+        row: [
+          { key: 'motorCilindrada',  label: 'Cilindrada máxima', unit: 'cc',  type: 'number', placeholder: '13000', flex: 1 },
+          { key: 'motorCilindros',   label: 'Nº de cilindros',   unit: 'cil', type: 'number', placeholder: '6',     flex: 1 },
+          { key: 'motorArquitetura', label: 'Arquitetura',        unit: '',    type: 'text',   placeholder: '6 em linha', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'motorPotenciaMax', label: 'Potência máxima', unit: 'cv',  type: 'number', placeholder: '1100', flex: 1 },
+          { key: 'motorTorqueMax',   label: 'Torque máximo',   unit: 'Nm',  type: 'number', placeholder: '4500', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'motorRpmMax',  label: 'RPM máximo',             unit: 'rpm', type: 'number', placeholder: '2600', flex: 1 },
+          { key: 'motorBoostMax', label: 'Pressão boost máxima', unit: 'bar', type: 'number', placeholder: '3.5',  flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'motorFabricantes', label: 'Fabricantes homologados', unit: '', type: 'text', placeholder: 'Ex: Cummins / MAN / Iveco / Scania', flex: 1 },
+          { key: 'motorECU',         label: 'ECU',                     unit: '', type: 'text', placeholder: 'Padrão / Livre', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'motorDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: motor homologado, bloco lacrado pela organização', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Transmissão', color: '#ffaa22', icon: '⚙️',
+    fields: [
+      {
+        row: [
+          { key: 'transmMarchasMax', label: 'Número de marchas',  unit: 'marchas', type: 'number', placeholder: '16',  flex: 1 },
+          { key: 'transmTipo',       label: 'Tipo',               unit: '',        type: 'text',   placeholder: 'Sequencial automatizada', flex: 2 },
+        ],
+      },
+      {
+        row: [
+          { key: 'transmFabricante', label: 'Fabricante',          unit: '', type: 'text', placeholder: 'ZF / Eaton', flex: 1 },
+          { key: 'transmRetarder',   label: 'Retarder permitido', unit: '', type: 'text', placeholder: 'Sim / Não / Tipo', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'transmDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: câmbio automatizado obrigatório, retarder tipo ZF Intarder', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Freios', color: '#dd5533', icon: '🛑',
+    fields: [
+      {
+        row: [
+          { key: 'freioSistema', label: 'Sistema',          unit: '', type: 'text', placeholder: 'Pneumático', flex: 1 },
+          { key: 'freioABS',     label: 'ABS obrigatório',  unit: '', type: 'text', placeholder: 'Sim / Não / Tipo', flex: 1 },
+        ],
+      },
+      {
+        label: 'Diâmetro máximo dos discos',
+        row: [
+          { key: 'freioDiantDiamMax', label: 'Dianteiro', unit: 'mm', type: 'number', placeholder: '410', flex: 1 },
+          { key: 'freioTrasDiamMax',  label: 'Traseiro',  unit: 'mm', type: 'number', placeholder: '410', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'freioMaterial',       label: 'Material permitido',                  unit: '', type: 'text', placeholder: 'Ex: ferro fundido, cerâmica proibida', flex: 1 },
+          { key: 'freioRetarderEscape', label: 'Retarder de escape (regulamentação)', unit: '', type: 'text', placeholder: 'Permitido / Proibido / Regulamentação específica', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'freioDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: ABS obrigatório, sistema pneumático com duplo circuito', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Combustível', color: '#44ccff', icon: '⛽',
+    fields: [
+      {
+        label: 'Tipo e especificação',
+        row: [
+          { key: 'combustivelTipo',   label: 'Tipo',              unit: '',    type: 'text',   placeholder: 'Diesel S10', flex: 2 },
+          { key: 'combustivelCetano', label: 'Índice de cetano',  unit: '',    type: 'text',   placeholder: '51', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'combustivelMax',     label: 'Capacidade máxima tanque',      unit: 'L',  type: 'number', placeholder: '200', flex: 1 },
+          { key: 'combustivelTempMax', label: 'Temperatura máxima',            unit: '°C', type: 'number', placeholder: '40',  flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'combustivelObs', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: diesel S10 fornecido pela organização, aditivos proibidos', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Pneus', color: '#aabb44', icon: '⚫',
+    fields: [
+      {
+        label: 'Dimensões',
+        row: [
+          { key: 'pneusLargura',   label: 'Largura',           unit: 'mm',  type: 'number', placeholder: '315', flex: 1 },
+          { key: 'pneusDiametro',  label: 'Diâmetro',          unit: 'mm',  type: 'number', placeholder: '1050', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pneusFornecedor', label: 'Fornecedor',              unit: '',    type: 'text',   placeholder: 'Continental', flex: 2 },
+          { key: 'pneusPressaoMin', label: 'Pressão mínima',          unit: 'bar', type: 'number', placeholder: '8',  flex: 1 },
+        ],
+      },
+      {
+        label: 'Uso em corrida',
+        row: [
+          { key: 'pneusCompostosMin', label: 'Compostos mínimo por evento', unit: 'compost.', type: 'number', placeholder: '1', flex: 1 },
+          { key: 'pneusCompostosMax', label: 'Compostos máximo por evento', unit: 'compost.', type: 'number', placeholder: '2', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pneusObs', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: pneus Continental fornecidos pela organização', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Segurança', color: '#ff44aa', icon: '🛡️',
+    fields: [
+      {
+        row: [
+          { key: 'segGaiola', label: 'Gaiola de proteção',       unit: '', type: 'text', placeholder: 'Homologada / Tipo', flex: 1 },
+          { key: 'segCinto',  label: 'Tipo de cinto',            unit: '', type: 'text', placeholder: '6 pontos', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'segHANS',    label: 'HANS obrigatório',        unit: '', type: 'text', placeholder: 'Sim / Não', flex: 1 },
+          { key: 'segExtintor', label: 'Extintor (tipo/capacidade)', unit: '', type: 'text', placeholder: 'Pó químico 6 kg', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'segCelulaComb', label: 'Célula de combustível (obrigatória)', unit: '', type: 'text', placeholder: 'Sim / Tipo', flex: 1 },
+          { key: 'segCorteMotor', label: 'Corte de motor externo',              unit: '', type: 'text', placeholder: 'Obrigatório', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'segDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: gaiola FIA homologada, extintor automático obrigatório', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Pit Stop', color: '#22ccaa', icon: '🔩',
+    fields: [
+      {
+        row: [
+          { key: 'pitMecanicosMax',   label: 'Mecânicos máximo',         unit: 'pess.', type: 'number', placeholder: '8',  flex: 1 },
+          { key: 'pitTempoMinParada', label: 'Tempo mínimo de parada',   unit: 's',     type: 'number', placeholder: '30', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pitReabastecimento', label: 'Reabastecimento (regras)', unit: '', type: 'text', placeholder: 'Permitido / Proibido / Obrigatório', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'pitDesc', label: 'Observações', unit: '', type: 'textarea', placeholder: 'Ex: reabastecimento com motor desligado, mecânicos com EPI', flex: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Homologação', color: '#bb88ff', icon: '📋',
+    fields: [
+      {
+        row: [
+          { key: 'homEntidade', label: 'Entidade homologadora',   unit: '', type: 'text', placeholder: 'CBA / FIA / ambas', flex: 1 },
+          { key: 'homValidade', label: 'Validade da homologação', unit: '', type: 'text', placeholder: 'Ex: 2024–2026', flex: 1 },
+        ],
+      },
+      {
+        row: [
+          { key: 'homDesc', label: 'Observações / número do documento', unit: '', type: 'textarea', placeholder: 'Ex: Regulamento Técnico Copa Truck 2024', flex: 1 },
+        ],
+      },
+    ],
+  },
+];
+
 /* ── Sub-componente: célula de input ─────────────────────────────── */
 function FieldCell({ def, value, onChange, COLORS, sectionColor }) {
   const isNum = def.type === 'number';
@@ -476,16 +831,29 @@ function FieldCell({ def, value, onChange, COLORS, sectionColor }) {
 }
 
 /* ── Componente Principal ─────────────────────────────────────────── */
-export default function RegulamentacoesTab() {
+export default function RegulamentacoesTab({ vehicleType = 'car' }) {
   const { colors: COLORS } = useTheme();
   const { pesoCarro, violaRegulamento, excesso, pesoMinimo: ctxPesoMinimo } = useCarWeight();
+
+  const isTruck = vehicleType === 'truck';
+  const INITIAL = isTruck ? EMPTY_TRUCK : EMPTY;
+  const activeSections = isTruck ? SECTIONS_TRUCK : SECTIONS;
+  const STORAGE_KEY = isTruck ? STORAGE_KEY_TRUCK : STORAGE_KEY_CAR;
 
   const [values, setValues] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? { ...EMPTY, ...JSON.parse(saved) } : { ...EMPTY };
-    } catch { return { ...EMPTY }; }
+      return saved ? { ...INITIAL, ...JSON.parse(saved) } : { ...INITIAL };
+    } catch { return { ...INITIAL }; }
   });
+
+  // Reset state when vehicleType changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      setValues(saved ? { ...INITIAL, ...JSON.parse(saved) } : { ...INITIAL });
+    } catch { setValues({ ...INITIAL }); }
+  }, [vehicleType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [saved, setSaved] = useState(false);
 
@@ -502,14 +870,14 @@ export default function RegulamentacoesTab() {
         if (d.engine_cylinders    && !prev.motorCilindros)    up.motorCilindros    = d.engine_cylinders;
         if (d.trans_numGears      && !prev.transmMarchasMax)  up.transmMarchasMax  = d.trans_numGears;
         if (d.trans_gearboxType   && !prev.transmTipo)        up.transmTipo        = d.trans_gearboxType;
-        if (d.diff_type           && !prev.transmDiferencial) up.transmDiferencial = d.diff_type;
+        if (!isTruck && d.diff_type && !prev.transmDiferencial) up.transmDiferencial = d.diff_type;
         if (!Object.keys(up).length) return prev;
         return { ...prev, ...up };
       });
     };
     window.addEventListener(SETUP_REG_CHANGED_EVENT, handler);
     return () => window.removeEventListener(SETUP_REG_CHANGED_EVENT, handler);
-  }, []);
+  }, [isTruck]);
 
   // Tópico 2: quando PesoTab ou CombustivelTab alteram pesoMinimo via contexto, reflete aqui
   const prevCtxPesoMinimo = useRef(ctxPesoMinimo);
@@ -565,11 +933,11 @@ export default function RegulamentacoesTab() {
 
   const handleClear = useCallback(() => {
     if (window.confirm('Limpar todos os parâmetros regulamentares?')) {
-      setValues({ ...EMPTY });
+      setValues({ ...INITIAL });
     }
-  }, []);
+  }, [INITIAL]);
 
-  const allKeys = Object.keys(EMPTY);
+  const allKeys = Object.keys(INITIAL);
   const numericKeys = allKeys.filter(k => !k.endsWith('Obs') && !k.endsWith('Desc') && !k.endsWith('desc'));
   const filledNumeric = numericKeys.filter(k => values[k] !== '').length;
   const filledAll = allKeys.filter(k => values[k] !== '').length;
@@ -634,7 +1002,7 @@ export default function RegulamentacoesTab() {
 
       {/* ── Grid de seções ─────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 16 }}>
-        {SECTIONS.map(section => {
+        {activeSections.map(section => {
           // Identifica quais chaves numéricas da seção estão preenchidas
           const sectionNumKeys = section.fields.flatMap(f => f.row.filter(d => d.type === 'number').map(d => d.key));
           const sectionNumFilled = sectionNumKeys.filter(k => values[k] !== '').length;

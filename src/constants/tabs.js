@@ -24,3 +24,25 @@ export const TABS = [
   { id: 'laptime',         label: 'Lap Time',           icon: '⏱️' },
   { id: 'equipe',          label: 'Equipe',             icon: '📡' },
 ];
+
+/* ── Overrides de labels/ícones por tipo de veículo ─────────────── */
+const VEHICLE_TAB_OVERRIDES = {
+  truck: {
+    profiles: { label: 'Caminhões', icon: '🚛' },
+  },
+};
+
+/** Tipos de veículo disponíveis */
+export const VEHICLE_TYPES = [
+  { value: 'car',   label: 'Carro',    icon: '🏎️' },
+  { value: 'truck', label: 'Caminhão', icon: '🚛' },
+];
+
+/** Retorna as abas filtradas/adaptadas para o tipo de veículo */
+export function getTabsForVehicle(vehicleType) {
+  const overrides = VEHICLE_TAB_OVERRIDES[vehicleType] || {};
+  return TABS.map((tab) => {
+    const ov = overrides[tab.id];
+    return ov ? { ...tab, ...ov } : tab;
+  });
+}

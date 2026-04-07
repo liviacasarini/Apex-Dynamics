@@ -34,9 +34,10 @@ import {
   LapTimeTab,
   EquipeTab,
 } from '@/components/tabs';
+import SetupSheetTruckTab from '@/components/tabs/setup/SetupSheetTruckTab';
 
 /* ── Canais monitorados para alertas de vitals ──────────────────────── */
-const VITAL_CHANNELS = [
+const VITAL_CHANNELS_CAR = [
   { key: 'engineTemp',       label: 'Temp. Água'          },
   { key: 'oilPressure',      label: 'Pressão Óleo'        },
   { key: 'battery',          label: 'Bateria'             },
@@ -44,6 +45,18 @@ const VITAL_CHANNELS = [
   { key: 'fuelPressure',     label: 'Pressão Comb.'       },
   { key: 'transOilTemp',     label: 'Temp. Óleo Câmbio'   },
   { key: 'transOilPressure', label: 'Pressão Óleo Câmbio' },
+];
+
+const VITAL_CHANNELS_TRUCK = [
+  { key: 'engineTemp',       label: 'Temp. Motor'            },
+  { key: 'oilPressure',      label: 'Pressão Óleo Motor'     },
+  { key: 'battery',          label: 'Bateria (24V)'          },
+  { key: 'egt',              label: 'Temp. Gases Escape'     },
+  { key: 'map',              label: 'Pressão Turbo (MAP)'    },
+  { key: 'fuelPressure',     label: 'Pressão Common Rail'    },
+  { key: 'transOilTemp',     label: 'Temp. Óleo Câmbio'      },
+  { key: 'transOilPressure', label: 'Pressão Óleo Câmbio'    },
+  { key: 'iat',              label: 'Temp. Ar Admissão'      },
 ];
 
 // Tabs que exigem telemetria carregada (redirecionam para overview sem dados)
@@ -203,6 +216,8 @@ function AppInner() {
       })
       .filter(Boolean);
   }, [profiles.activeProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const VITAL_CHANNELS = profiles.vehicleType === 'truck' ? VITAL_CHANNELS_TRUCK : VITAL_CHANNELS_CAR;
 
   const vitalsAlerts = useMemo(() => {
     if (!isLoaded || !data) return [];
@@ -553,7 +568,7 @@ function AppInner() {
         loadedWorkspaceIds={loadedWorkspaceIds}
       />
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 96px)' }}>
-        <TabBar activeTab={activeTab} onTabChange={profiles.setActiveTab} isLoaded={isLoaded} />
+        <TabBar activeTab={activeTab} onTabChange={profiles.setActiveTab} isLoaded={isLoaded} vehicleType={profiles.vehicleType} />
         <main style={{ flex: 1, minWidth: 0, maxWidth: 1600, margin: '0 auto', width: '100%', padding: '0 8px' }}>
 
           {activeTab === 'overview' && (
@@ -577,6 +592,7 @@ function AppInner() {
               onSaveSession={handleSaveSession}
               onSaveLap={handleSaveLap}
               onAddPartEntry={handleAddPartEntry}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -593,7 +609,7 @@ function AppInner() {
           )}
 
           {activeTab === 'wot' && (
-            <WOTAnalysisTab data={data} channels={channels} lapsAnalysis={displayedLapsAnalysis} />
+            <WOTAnalysisTab data={data} channels={channels} lapsAnalysis={displayedLapsAnalysis} vehicleType={profiles.vehicleType} />
           )}
 
           {activeTab === 'vitals' && (
@@ -602,6 +618,7 @@ function AppInner() {
               vitalsLimits={profiles.vitalsLimits} setVitalsLimits={profiles.setVitalsLimits}
               isLoaded={isLoaded}
               filterMode={filterMode} setFilterMode={setFilterMode} hasOutLap={!!outLapKey}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -664,10 +681,25 @@ function AppInner() {
               profileTireKm={profiles.activeProfile?.tireKm}
               onSaveTireKm={profiles.saveTireKm}
               profileSessions={profiles.activeProfile?.sessions || []}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
-          {activeTab === 'setup' && (
+          {activeTab === 'setup' && profiles.vehicleType === 'truck' && (
+            <SetupSheetTruckTab
+              profileLoad={profileSetupLoad}
+              profilesList={profiles.profiles}
+              activeProfileId={profiles.activeProfileId}
+              profileGroups={profiles.activeProfile?.groups || []}
+              onSaveSetup={handleSaveSetup}
+              profileSetups={profiles.activeProfile?.setups || []}
+              onLoadSetup={handleLoadSetup}
+              onDeleteSetup={handleDeleteSetup}
+              setupForm={setupForm} setSetupForm={setSetupForm}
+              profileSessions={profiles.activeProfile?.sessions || []}
+            />
+          )}
+          {activeTab === 'setup' && profiles.vehicleType !== 'truck' && (
             <SetupSheetTab
               profileLoad={profileSetupLoad}
               profilesList={profiles.profiles}
@@ -737,6 +769,7 @@ function AppInner() {
               mechanicSnapshots={profiles.activeProfile?.mechanicSnapshots || []}
               brakePad={profiles.activeProfile?.brakePad || EMPTY_BRAKE_PAD}
               onSaveBrakePad={profiles.saveBrakePad}
+              vehicleType={profiles.vehicleType}
               onSavePart={handleSavePart}
               onEditPart={handleEditPart}
               onDeletePart={handleDeletePart}
@@ -771,7 +804,7 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'regulamentacoes' && <RegulamentacoesTab />}
+          {activeTab === 'regulamentacoes' && <RegulamentacoesTab vehicleType={profiles.vehicleType} />}
 
           {activeTab === 'combustivel' && (
             <CombustivelTab
@@ -783,6 +816,7 @@ function AppInner() {
               profileFuelCalcs={profiles.activeProfile?.fuelCalcs || []}
               onDeleteFuelCalc={handleDeleteFuelCalc}
               onLoadFuelCalc={handleLoadFuelCalc}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -792,6 +826,7 @@ function AppInner() {
               data={data} channels={channels}
               onSaveSnapshot={handleSaveWeightSnapshot}
               profileWeightLoad={profileWeightLoad}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -804,13 +839,14 @@ function AppInner() {
           )}
 
           {activeTab === 'estrategia' && (
-            <EstrategiaTab activeProfile={profiles.activeProfile} />
+            <EstrategiaTab activeProfile={profiles.activeProfile} vehicleType={profiles.vehicleType} />
           )}
 
           {activeTab === 'performance' && (
             <PerformanceTab
               activeProfile={profiles.activeProfile}
               profileParts={profiles.activeProfile?.parts || []}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -827,6 +863,7 @@ function AppInner() {
               setupForm={setupForm}
               setSetupForm={setSetupForm}
               profileId={profiles.activeProfileId}
+              vehicleType={profiles.vehicleType}
             />
           )}
 

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useColors } from '@/context/ThemeContext';
-import { TABS } from '@/constants/tabs';
+import { TABS, getTabsForVehicle } from '@/constants/tabs';
 
 const TELEMETRY_ONLY = new Set(['laps', 'wot', 'report', 'track']);
 const ORDER_KEY = 'rt_tab_order';
@@ -130,7 +130,7 @@ function ReorderModal({ order, onMove, onReset, onClose, COLORS }) {
   );
 }
 
-export default function TabBar({ activeTab, onTabChange, isLoaded }) {
+export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType = 'car' }) {
   const COLORS = useColors();
   const [order, setOrder] = useState(() => loadOrder() || TABS.map((t) => t.id));
   const [open,  setOpen]  = useState(false);
@@ -182,7 +182,8 @@ export default function TabBar({ activeTab, onTabChange, isLoaded }) {
     setDragOverId(null);
   }
 
-  const orderedTabs = order.map((id) => TABS.find((t) => t.id === id)).filter(Boolean);
+  const vehicleTabs = getTabsForVehicle(vehicleType);
+  const orderedTabs = order.map((id) => vehicleTabs.find((t) => t.id === id)).filter(Boolean);
   const visibleTabs = isLoaded
     ? orderedTabs
     : orderedTabs.filter((t) => !TELEMETRY_ONLY.has(t.id));

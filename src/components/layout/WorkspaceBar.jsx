@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useColors } from '@/context/ThemeContext';
+import { VEHICLE_TYPES } from '@/constants/tabs';
 
 const smallBtn = (color) => ({
   flex: 1,
@@ -41,6 +42,7 @@ export default function WorkspaceBar({
   const [confirmDelete,  setConfirmDelete]  = useState(false);
   const [creating,       setCreating]       = useState(false);
   const [createVal,      setCreateVal]      = useState('');
+  const [createVehicle,  setCreateVehicle]  = useState('car');
   const gearRef    = useRef(null);
   const createRef  = useRef(null);
 
@@ -82,13 +84,15 @@ export default function WorkspaceBar({
   const handleCreate = () => {
     setCreating(true);
     setCreateVal('');
+    setCreateVehicle('car');
     setTimeout(() => createRef.current?.querySelector('input')?.focus(), 50);
   };
 
   const submitCreate = () => {
-    if (createVal.trim()) onCreate(createVal.trim());
+    if (createVal.trim()) onCreate(createVal.trim(), createVehicle);
     setCreating(false);
     setCreateVal('');
+    setCreateVehicle('car');
   };
 
   const startRename = () => {
@@ -162,7 +166,7 @@ export default function WorkspaceBar({
                   }}
                 />
               )}
-              {w.name}
+              {w.vehicleType === 'truck' ? '🚛 ' : ''}{w.name}
             </div>
           );
         })}
@@ -173,6 +177,24 @@ export default function WorkspaceBar({
             ref={createRef}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px' }}
           >
+            <select
+              value={createVehicle}
+              onChange={(e) => setCreateVehicle(e.target.value)}
+              style={{
+                background: COLORS.bg,
+                color: COLORS.textPrimary,
+                border: `1px solid ${COLORS.accent}66`,
+                borderRadius: 4,
+                padding: '3px 4px',
+                fontSize: 11,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              {VEHICLE_TYPES.map((vt) => (
+                <option key={vt.value} value={vt.value}>{vt.icon} {vt.label}</option>
+              ))}
+            </select>
             <input
               autoFocus
               value={createVal}

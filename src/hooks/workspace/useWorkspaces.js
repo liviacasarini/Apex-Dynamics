@@ -71,6 +71,7 @@ export function useWorkspaces() {
   const trackTemplates  = activeWorkspace?.trackTemplates  ?? {};
   const activeTab       = activeWorkspace?.activeTab       ?? 'overview';
   const vitalsLimits    = activeWorkspace?.vitalsLimits    ?? DEFAULT_VITALS_LIMITS;
+  const vehicleType     = activeWorkspace?.vehicleType     ?? 'car';
   const savedReports    = activeWorkspace?.savedReports    ?? [];
   const tempLog         = activeWorkspace?.tempLog         ?? [];
   const tempSets        = activeWorkspace?.tempSets        ?? [];
@@ -110,6 +111,9 @@ export function useWorkspaces() {
     // Track Data
     trackTemplates,
     ...trackDataCRUD,
+
+    // Vehicle type
+    vehicleType,
 
     // Misc (tab, vitals, fuel, weight, reports, export/import, brakePad)
     activeTab,
