@@ -70,6 +70,7 @@ export function useWorkspaces() {
   const activeProfile   = profiles.find((p) => p.id === activeProfileId) ?? null;
   const trackTemplates  = activeWorkspace?.trackTemplates  ?? {};
   const activeTab       = activeWorkspace?.activeTab       ?? 'overview';
+  const vehicleType     = activeWorkspace?.vehicleType     ?? 'car';
   const vitalsLimits    = activeWorkspace?.vitalsLimits    ?? DEFAULT_VITALS_LIMITS;
   const savedReports    = activeWorkspace?.savedReports    ?? [];
   const tempLog         = activeWorkspace?.tempLog         ?? [];
@@ -82,6 +83,7 @@ export function useWorkspaces() {
     workspaces,
     activeWorkspaceId,
     activeWorkspace,
+    vehicleType,
     ...workspaceCRUD,
 
     // Profile management (scoped to active workspace)

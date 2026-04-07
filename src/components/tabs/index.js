@@ -6,7 +6,9 @@ export { default as ReportTab       } from './report/ReportTab';
 export { default as TrackMapTab     } from './track-map/TrackMapTab';
 export { default as TemperatureTab  } from './temperatura/TemperatureTab';
 export { default as SetupSheetTab   } from './setup/SetupSheetTab';
+export { default as SetupSheetMotoTab } from './setup/SetupSheetMotoTab';
 export { default as PneusTab        } from './pneus/PneusTab';
+export { default as PneusMotoTab    } from './pneus/PneusMotoTab';
 export { default as ProfilesTab     } from './profiles/ProfilesTab';
 export { default as MultiSessionTab } from './multi-session/MultiSessionTab';
 export { default as MecanicaTab     } from './mecanica/MecanicaTab';
@@ -22,3 +24,12 @@ export { default as PerformanceTab  } from './performance/PerformanceTab';
 export { default as CalendarioTab   } from './calendario/CalendarioTab';
 export { default as LapTimeTab      } from './laptime/LapTimeTab';
 export { default as EquipeTab       } from './equipe/EquipeTab';
+export { default as TelemetriaLiveTab } from './telemetria/TelemetriaLiveTab';
+
+// ── Moto-specific tabs ──
+export { default as PesoMotoTab            } from './moto/PesoMotoTab';
+export { default as CombustivelMotoTab     } from './moto/CombustivelMotoTab';
+export { default as MecanicaMotoTab        } from './moto/MecanicaMotoTab';
+export { default as PilotosMotoTab         } from './moto/PilotosMotoTab';
+export { default as PistasMotoTab          } from './moto/PistasMotoTab';
+export { default as RegulamentacoesMotoTab } from './moto/RegulamentacoesMotoTab';

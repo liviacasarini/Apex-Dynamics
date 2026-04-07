@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useColors } from '@/context/ThemeContext';
+import { VEHICLE_TYPES } from '@/constants/tabs';
 
 const smallBtn = (color) => ({
   flex: 1,
@@ -41,6 +42,7 @@ export default function WorkspaceBar({
   const [confirmDelete,  setConfirmDelete]  = useState(false);
   const [creating,       setCreating]       = useState(false);
   const [createVal,      setCreateVal]      = useState('');
+  const [createVehicleType, setCreateVehicleType] = useState('car');
   const gearRef    = useRef(null);
   const createRef  = useRef(null);
 
@@ -82,13 +84,15 @@ export default function WorkspaceBar({
   const handleCreate = () => {
     setCreating(true);
     setCreateVal('');
+    setCreateVehicleType('car');
     setTimeout(() => createRef.current?.querySelector('input')?.focus(), 50);
   };
 
   const submitCreate = () => {
-    if (createVal.trim()) onCreate(createVal.trim());
+    if (createVal.trim()) onCreate(createVal.trim(), createVehicleType);
     setCreating(false);
     setCreateVal('');
+    setCreateVehicleType('car');
   };
 
   const startRename = () => {
@@ -162,7 +166,7 @@ export default function WorkspaceBar({
                   }}
                 />
               )}
-              {w.name}
+              {w.vehicleType === 'truck' ? '🚛 ' : w.vehicleType === 'moto' ? '🏍️ ' : ''}{w.name}
             </div>
           );
         })}
@@ -173,6 +177,29 @@ export default function WorkspaceBar({
             ref={createRef}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px' }}
           >
+            {VEHICLE_TYPES.map((vt) => {
+              const sel = createVehicleType === vt.value;
+              return (
+                <button
+                  key={vt.value}
+                  type="button"
+                  onClick={() => setCreateVehicleType(vt.value)}
+                  title={vt.label}
+                  style={{
+                    background: sel ? `${COLORS.accent}22` : 'transparent',
+                    border: `1px solid ${sel ? COLORS.accent + '88' : COLORS.border}`,
+                    color: sel ? COLORS.accent : COLORS.textMuted,
+                    borderRadius: 4,
+                    padding: '3px 7px',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                  }}
+                >
+                  {vt.icon}
+                </button>
+              );
+            })}
             <input
               autoFocus
               value={createVal}

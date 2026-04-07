@@ -17,7 +17,9 @@ import {
   TrackMapTab,
   TemperatureTab,
   SetupSheetTab,
+  SetupSheetMotoTab,
   PneusTab,
+  PneusMotoTab,
   ProfilesTab,
   MultiSessionTab,
   MecanicaTab,
@@ -33,6 +35,10 @@ import {
   CalendarioTab,
   LapTimeTab,
   EquipeTab,
+  TelemetriaLiveTab,
+  PesoMotoTab,
+  CombustivelMotoTab,
+  RegulamentacoesMotoTab,
 } from '@/components/tabs';
 
 /* ── Canais monitorados para alertas de vitals ──────────────────────── */
@@ -553,7 +559,7 @@ function AppInner() {
         loadedWorkspaceIds={loadedWorkspaceIds}
       />
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 96px)' }}>
-        <TabBar activeTab={activeTab} onTabChange={profiles.setActiveTab} isLoaded={isLoaded} />
+        <TabBar activeTab={activeTab} onTabChange={profiles.setActiveTab} isLoaded={isLoaded} vehicleType={profiles.vehicleType} />
         <main style={{ flex: 1, minWidth: 0, maxWidth: 1600, margin: '0 auto', width: '100%', padding: '0 8px' }}>
 
           {activeTab === 'overview' && (
@@ -602,6 +608,7 @@ function AppInner() {
               vitalsLimits={profiles.vitalsLimits} setVitalsLimits={profiles.setVitalsLimits}
               isLoaded={isLoaded}
               filterMode={filterMode} setFilterMode={setFilterMode} hasOutLap={!!outLapKey}
+              vehicleType={profiles.vehicleType}
             />
           )}
 
@@ -648,7 +655,18 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'pneus' && (
+          {activeTab === 'pneus' && profiles.vehicleType === 'moto' && (
+            <PneusMotoTab
+              activeProfileId={profiles.activeProfileId}
+              onSaveTireSet={handleSaveTireSet}
+              profileTireSets={profiles.activeProfile?.tireSets || []}
+              onLoadTireSet={handleLoadTireSet}
+              onDeleteTireSet={handleDeleteTireSet}
+              pneusForm={pneusForm} setPneusForm={setPneusForm}
+            />
+          )}
+
+          {activeTab === 'pneus' && profiles.vehicleType !== 'moto' && (
             <PneusTab
               profileLoad={profileTyreLoad}
               profilesList={profiles.profiles}
@@ -667,7 +685,19 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'setup' && (
+          {activeTab === 'setup' && profiles.vehicleType === 'moto' && (
+            <SetupSheetMotoTab
+              activeProfileId={profiles.activeProfileId}
+              onSaveSetup={handleSaveSetup}
+              profileSetups={profiles.activeProfile?.setups || []}
+              onLoadSetup={handleLoadSetup}
+              onDeleteSetup={handleDeleteSetup}
+              setupForm={setupForm} setSetupForm={setSetupForm}
+              profileSessions={profiles.activeProfile?.sessions || []}
+            />
+          )}
+
+          {activeTab === 'setup' && profiles.vehicleType !== 'moto' && (
             <SetupSheetTab
               profileLoad={profileSetupLoad}
               profilesList={profiles.profiles}
@@ -771,9 +801,15 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'regulamentacoes' && <RegulamentacoesTab />}
+          {activeTab === 'regulamentacoes' && profiles.vehicleType === 'moto' && (
+            <RegulamentacoesMotoTab workspaceId={profiles.activeWorkspaceId} />
+          )}
+          {activeTab === 'regulamentacoes' && profiles.vehicleType !== 'moto' && <RegulamentacoesTab />}
 
-          {activeTab === 'combustivel' && (
+          {activeTab === 'combustivel' && profiles.vehicleType === 'moto' && (
+            <CombustivelMotoTab workspaceId={profiles.activeWorkspaceId} />
+          )}
+          {activeTab === 'combustivel' && profiles.vehicleType !== 'moto' && (
             <CombustivelTab
               activeProfile={profiles.activeProfile}
               profilesList={profiles.profiles}
@@ -786,7 +822,10 @@ function AppInner() {
             />
           )}
 
-          {activeTab === 'peso' && (
+          {activeTab === 'peso' && profiles.vehicleType === 'moto' && (
+            <PesoMotoTab workspaceId={profiles.activeWorkspaceId} />
+          )}
+          {activeTab === 'peso' && profiles.vehicleType !== 'moto' && (
             <PesoTab
               activeProfile={profiles.activeProfile}
               data={data} channels={channels}
@@ -835,6 +874,10 @@ function AppInner() {
               onApplyMeasurement={handleApplyMeasurement}
               profilesList={profiles.profiles}
             />
+          )}
+
+          {activeTab === 'telemetria' && profiles.vehicleType === 'moto' && (
+            <TelemetriaLiveTab />
           )}
 
         </main>

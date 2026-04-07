@@ -8,12 +8,12 @@ import { LAP_COLORS } from '@/constants/colors';
 import { ChartCard, CustomTooltip, FilterModeBar, PrintFooter } from '@/components/common';
 import { makeTheme } from '@/styles/theme';
 
-export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, setVitalsLimits, isLoaded, filterMode, setFilterMode, hasOutLap }) {
+export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, setVitalsLimits, isLoaded, filterMode, setFilterMode, hasOutLap, vehicleType }) {
   const COLORS = useColors();
   const theme = makeTheme(COLORS);
 
   /** Vitais com canal de telemetria */
-  const VITAL_DEFS = [
+  const CAR_VITAL_DEFS = [
     { key: 'engineTemp',       label: 'Temp. Água (Motor)',    unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
     { key: 'oilPressure',      label: 'Pressão Óleo Motor',   unit: 'bar', color: COLORS.yellow,  hasMax: true,  hasMin: true  },
     { key: 'battery',          label: 'Tensão da Bateria',    unit: 'V',   color: COLORS.blue,    hasMax: false, hasMin: true  },
@@ -22,6 +22,67 @@ export default function VitalsTab({ data, channels, lapsAnalysis, vitalsLimits, 
     { key: 'transOilTemp',     label: 'Temp. Óleo Câmbio',   unit: '°C',  color: COLORS.cyan,    hasMax: true,  hasMin: true  },
     { key: 'transOilPressure', label: 'Pressão Óleo Câmbio', unit: 'bar', color: COLORS.purple,  hasMax: true,  hasMin: true  },
   ];
+
+  /** Sensores extras de Superbike (cobertura completa de moto de pista) */
+  const MOTO_VITAL_DEFS = [
+    // Motor / térmico
+    { key: 'engineTemp',        label: 'Temp. Água (Motor)',     unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'oilPressure',       label: 'Pressão Óleo Motor',     unit: 'bar', color: COLORS.yellow,  hasMax: true,  hasMin: true  },
+    { key: 'oilTemp',           label: 'Temp. Óleo Motor',       unit: '°C',  color: COLORS.orange,  hasMax: true,  hasMin: true  },
+    { key: 'airboxTemp',        label: 'Temp. Airbox',           unit: '°C',  color: COLORS.cyan,    hasMax: true,  hasMin: false },
+    { key: 'airboxPressure',    label: 'Pressão Airbox',         unit: 'bar', color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    { key: 'mapPressure',       label: 'MAP',                    unit: 'kPa', color: COLORS.blue,    hasMax: true,  hasMin: true  },
+    { key: 'lambda',            label: 'Lambda',                 unit: '',    color: COLORS.green,   hasMax: true,  hasMin: true,  decimals: 3 },
+    { key: 'fuelPressure',      label: 'Pressão Combustível',    unit: 'bar', color: COLORS.orange,  hasMax: true,  hasMin: true  },
+    { key: 'fuelTemp',          label: 'Temp. Combustível',      unit: '°C',  color: COLORS.yellow,  hasMax: true,  hasMin: false },
+    { key: 'exhaustTempCyl1',   label: 'EGT Cilindro 1',         unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'exhaustTempCyl2',   label: 'EGT Cilindro 2',         unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'exhaustTempCyl3',   label: 'EGT Cilindro 3',         unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'exhaustTempCyl4',   label: 'EGT Cilindro 4',         unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: false },
+    { key: 'rpm',               label: 'RPM',                    unit: 'rpm', color: COLORS.yellow,  hasMax: true,  hasMin: false },
+    { key: 'gear',              label: 'Marcha',                 unit: '',    color: COLORS.cyan,    hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'tps',               label: 'TPS',                    unit: '%',   color: COLORS.green,   hasMax: false, hasMin: false },
+    // Elétrico
+    { key: 'battery',           label: 'Tensão da Bateria',      unit: 'V',   color: COLORS.blue,    hasMax: false, hasMin: true  },
+    { key: 'alternator',        label: 'Carga Alternador',       unit: 'A',   color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    // Embreagem
+    { key: 'clutchTemp',        label: 'Temp. Embreagem',        unit: '°C',  color: COLORS.orange,  hasMax: true,  hasMin: false },
+    // Freios
+    { key: 'brakeTempFront',    label: 'Temp. Disco Diant.',     unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: true  },
+    { key: 'brakeTempRear',     label: 'Temp. Disco Tras.',      unit: '°C',  color: COLORS.accent,  hasMax: true,  hasMin: true  },
+    { key: 'brakePressureFront',label: 'Pressão Freio Diant.',   unit: 'bar', color: COLORS.yellow,  hasMax: true,  hasMin: false },
+    { key: 'brakePressureRear', label: 'Pressão Freio Tras.',    unit: 'bar', color: COLORS.yellow,  hasMax: true,  hasMin: false },
+    // Pneus
+    { key: 'tirePressFront',    label: 'Pressão Pneu Diant.',    unit: 'bar', color: COLORS.cyan,    hasMax: true,  hasMin: true  },
+    { key: 'tirePressRear',     label: 'Pressão Pneu Tras.',     unit: 'bar', color: COLORS.cyan,    hasMax: true,  hasMin: true  },
+    { key: 'tireTempFront',     label: 'Temp. Pneu Diant.',      unit: '°C',  color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    { key: 'tireTempRear',      label: 'Temp. Pneu Tras.',       unit: '°C',  color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    // Suspensão
+    { key: 'forkTravel',        label: 'Curso Forquilha',        unit: 'mm',  color: COLORS.green,   hasMax: true,  hasMin: false },
+    { key: 'shockTravel',       label: 'Curso Mono',             unit: 'mm',  color: COLORS.green,   hasMax: true,  hasMin: false },
+    { key: 'forkSpeed',         label: 'Vel. Forquilha',         unit: 'mm/s',color: COLORS.blue,    hasMax: true,  hasMin: true  },
+    { key: 'shockSpeed',        label: 'Vel. Mono',              unit: 'mm/s',color: COLORS.blue,    hasMax: true,  hasMin: true  },
+    // Chassi / IMU
+    { key: 'leanAngle',         label: 'Ângulo de Inclinação',   unit: '°',   color: COLORS.accent,  hasMax: true,  hasMin: true  },
+    { key: 'pitchAngle',        label: 'Pitch',                  unit: '°',   color: COLORS.cyan,    hasMax: true,  hasMin: true  },
+    { key: 'yawRate',           label: 'Yaw Rate',               unit: '°/s', color: COLORS.purple,  hasMax: true,  hasMin: true  },
+    { key: 'gLat',              label: 'G Lateral',              unit: 'g',   color: COLORS.yellow,  hasMax: true,  hasMin: true  },
+    { key: 'gLon',              label: 'G Longitudinal',         unit: 'g',   color: COLORS.yellow,  hasMax: true,  hasMin: true  },
+    { key: 'gVert',             label: 'G Vertical',             unit: 'g',   color: COLORS.yellow,  hasMax: true,  hasMin: true  },
+    // Velocidades de roda (slip / wheelie)
+    { key: 'wheelSpeedFront',   label: 'Vel. Roda Diant.',       unit: 'km/h',color: COLORS.green,   hasMax: true,  hasMin: false },
+    { key: 'wheelSpeedRear',    label: 'Vel. Roda Tras.',        unit: 'km/h',color: COLORS.green,   hasMax: true,  hasMin: false },
+    { key: 'slipRatio',         label: 'Slip Ratio',             unit: '%',   color: COLORS.orange,  hasMax: true,  hasMin: false },
+    // Eletrônica
+    { key: 'tcLevel',           label: 'TC Ativo',               unit: '',    color: COLORS.accent,  hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'awLevel',           label: 'Anti-Wheelie Ativo',     unit: '',    color: COLORS.accent,  hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'ebcLevel',          label: 'EBC Ativo',              unit: '',    color: COLORS.accent,  hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'launchActive',      label: 'Launch Control',         unit: '',    color: COLORS.green,   hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'pitLimiter',        label: 'Pit Limiter',            unit: '',    color: COLORS.yellow,  hasMax: false, hasMin: false, decimals: 0 },
+    { key: 'absActive',         label: 'ABS Ativo',              unit: '',    color: COLORS.blue,    hasMax: false, hasMin: false, decimals: 0 },
+  ];
+
+  const VITAL_DEFS = vehicleType === 'moto' ? MOTO_VITAL_DEFS : CAR_VITAL_DEFS;
 
   const INPUT_STYLE = {
     width: '100%',

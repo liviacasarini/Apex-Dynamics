@@ -8,16 +8,17 @@
 import { DEFAULT_VITALS_LIMITS } from '@/constants/vitals';
 
 export function createWorkspaceCRUD(update) {
-  const createWorkspace = (name) => {
+  const createWorkspace = (name, vehicleType = 'car') => {
     const trimmed = name?.trim();
     if (!trimmed) return { error: 'Nome não pode ser vazio.' };
+    const vt = ['car', 'moto', 'truck'].includes(vehicleType) ? vehicleType : 'car';
     const id = crypto.randomUUID();
     update((prev) => ({
       ...prev,
       activeWorkspaceId: id,
       workspaces: [
         ...prev.workspaces,
-        { id, name: trimmed, activeProfileId: null, activeTab: 'overview', vitalsLimits: DEFAULT_VITALS_LIMITS, savedReports: [], tempLog: [], tempSets: [], profiles: [] },
+        { id, name: trimmed, vehicleType: vt, activeProfileId: null, activeTab: 'overview', vitalsLimits: DEFAULT_VITALS_LIMITS, savedReports: [], tempLog: [], tempSets: [], profiles: [] },
       ],
     }));
     return { id };

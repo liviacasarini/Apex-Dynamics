@@ -1,14 +1,15 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useColors } from '@/context/ThemeContext';
-import { TABS } from '@/constants/tabs';
+import { getTabsForVehicle } from '@/constants/tabs';
 
 const TELEMETRY_ONLY = new Set(['laps', 'wot', 'report', 'track']);
-const ORDER_KEY = 'rt_tab_order';
+const ORDER_KEY_BASE = 'rt_tab_order';
+const orderKey = (vt) => (vt === 'moto' ? `${ORDER_KEY_BASE}_moto` : ORDER_KEY_BASE);
 
-function loadOrder() {
+function loadOrder(TABS, vt) {
   try {
-    const raw = localStorage.getItem(ORDER_KEY);
+    const raw = localStorage.getItem(orderKey(vt));
     if (!raw) return null;
     const saved = JSON.parse(raw);
     const ids = TABS.map((t) => t.id);
@@ -18,11 +19,11 @@ function loadOrder() {
   } catch { return null; }
 }
 
-function saveOrder(order) {
-  try { localStorage.setItem(ORDER_KEY, JSON.stringify(order)); } catch { /* noop */ }
+function saveOrder(order, vt) {
+  try { localStorage.setItem(orderKey(vt), JSON.stringify(order)); } catch { /* noop */ }
 }
 
-function ReorderModal({ order, onMove, onReset, onClose, COLORS }) {
+function ReorderModal({ order, onMove, onReset, onClose, COLORS, TABS }) {
   return createPortal(
     /* Overlay */
     <div
@@ -130,9 +131,14 @@ function ReorderModal({ order, onMove, onReset, onClose, COLORS }) {
   );
 }
 
-export default function TabBar({ activeTab, onTabChange, isLoaded }) {
+export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType = 'car' }) {
   const COLORS = useColors();
-  const [order, setOrder] = useState(() => loadOrder() || TABS.map((t) => t.id));
+  const TABS = getTabsForVehicle(vehicleType);
+  const [order, setOrder] = useState(() => loadOrder(TABS, vehicleType) || TABS.map((t) => t.id));
+  useEffect(() => {
+    setOrder(loadOrder(TABS, vehicleType) || TABS.map((t) => t.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleType]);
   const [open,  setOpen]  = useState(false);
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
@@ -143,13 +149,13 @@ export default function TabBar({ activeTab, onTabChange, isLoaded }) {
     if (swap < 0 || swap >= next.length) return;
     [next[index], next[swap]] = [next[swap], next[index]];
     setOrder(next);
-    saveOrder(next);
+    saveOrder(next, vehicleType);
   }
 
   function reset() {
     const def = TABS.map((t) => t.id);
     setOrder(def);
-    saveOrder(def);
+    saveOrder(def, vehicleType);
   }
 
   function handleDragStart(id) {
@@ -264,6 +270,7 @@ export default function TabBar({ activeTab, onTabChange, isLoaded }) {
           onReset={reset}
           onClose={() => setOpen(false)}
           COLORS={COLORS}
+          TABS={TABS}
         />
       )}
     </>
