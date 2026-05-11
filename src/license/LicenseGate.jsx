@@ -109,6 +109,46 @@ function EyeIcon({ open }) {
 
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
+/**
+ * Verifica expiração do certificado RS256 e dispara notificação OS
+ * se o app estiver dentro da janela de aviso (< 25h ou < 2.5h antes).
+ * Chamado uma vez por abertura do app — evita spam ao usar debounce via
+ * localStorage com chave baseada no `exp` do certificado.
+ */
+function checkAndNotifyCertExpiry(payload) {
+  if (!payload?.exp || !window.electronAPI?.showNotification) return;
+
+  const DEBOUNCE_KEY = `notif_sent_${payload.exp}`;
+  const alreadySent  = sessionStorage.getItem(DEBOUNCE_KEY);
+  if (alreadySent) return;
+
+  const nowSec    = Math.floor(Date.now() / 1000);
+  const secLeft   = payload.exp - nowSec;
+  const hoursLeft = secLeft / 3600;
+
+  if (secLeft <= 0) {
+    // Já expirado (caso raro — normalmente o renew teria ocorrido)
+    window.electronAPI.showNotification(
+      '⛔ Licença Expirada — ApexDynamics',
+      'Sua licença expirou. Faça login novamente para renovar o acesso.'
+    );
+    sessionStorage.setItem(DEBOUNCE_KEY, '1');
+  } else if (hoursLeft <= 2.5) {
+    const h = Math.ceil(hoursLeft);
+    window.electronAPI.showNotification(
+      '⏰ Licença expira em breve — ApexDynamics',
+      `Sua licença expira em ~${h}h. Abra o ApexIdentityManager para renovar.`
+    );
+    sessionStorage.setItem(DEBOUNCE_KEY, '1');
+  } else if (hoursLeft <= 25) {
+    window.electronAPI.showNotification(
+      '🔔 Licença expira amanhã — ApexDynamics',
+      'Sua licença vence em menos de 1 dia. Abra o ApexIdentityManager para renovar.'
+    );
+    sessionStorage.setItem(DEBOUNCE_KEY, '1');
+  }
+}
+
 function saveSession(data) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(data));
 }
@@ -154,6 +194,8 @@ export default function LicenseGate({ children }) {
 
       if (check.valid && !check.expired) {
         // Certificado válido → acesso liberado
+        // Verifica se está próximo de expirar e notifica via OS
+        checkAndNotifyCertExpiry(check.payload);
         setStatus('valid');
         return;
       }

@@ -13,7 +13,7 @@
  *  5. Após 5 dias: requer internet para renovar ou bloqueia
  */
 
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, Notification } = require('electron');
 const path   = require('path');
 const http   = require('http');
 const https  = require('https');
@@ -723,6 +723,20 @@ ipcMain.handle('license:logout', () => {
   sessionToken = null;
   sessionHwid  = null;
   return { success: true };
+});
+
+/* ── IPC: Notificação OS nativa ────────────────────────────────────── */
+
+ipcMain.handle('notify:show', (_event, { title, body }) => {
+  if (!Notification.isSupported()) return { ok: false };
+  try {
+    const n = new Notification({ title: String(title), body: String(body) });
+    n.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
+    n.show();
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 });
 
 /* ── IPC: Validar APEX hash (mantido para compatibilidade) ─────────── */

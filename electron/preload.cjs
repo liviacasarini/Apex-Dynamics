@@ -69,6 +69,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   logout: () =>
     ipcRenderer.invoke('license:logout'),
+
+  /**
+   * Exibe uma notificação nativa do sistema operacional.
+   * Funciona mesmo com a janela minimizada.
+   */
+  showNotification: (title, body) =>
+    ipcRenderer.invoke('notify:show', { title: String(title), body: String(body) }),
 });
 
 /* ── API de equipe (Team WebSocket) ──────────────────────────────────── */
