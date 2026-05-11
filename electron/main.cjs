@@ -13,7 +13,7 @@
  *  5. Após 5 dias: requer internet para renovar ou bloqueia
  */
 
-const { app, BrowserWindow, Menu, ipcMain, Notification } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, Notification, dialog } = require('electron');
 const path   = require('path');
 const http   = require('http');
 const https  = require('https');
@@ -874,7 +874,40 @@ app.whenReady().then(() => {
   createWindow();
   startTeamServer();
   startTeamHttpServer();
+  setupAutoUpdater();
 });
+
+/* ── Auto-Update (apenas em produção) ──────────────────────────────── */
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  const { autoUpdater } = require('electron-updater');
+
+  autoUpdater.autoDownload         = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox({
+      type:      'info',
+      title:     'Atualização pronta — ApexDynamics',
+      message:   `Versão ${info.version} baixada com sucesso.`,
+      detail:    'Deseja reiniciar agora para aplicar a atualização?',
+      buttons:   ['Reiniciar agora', 'Mais tarde'],
+      defaultId: 0,
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    }).catch(() => {});
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdate]', err.message);
+  });
+
+  // Verifica 10 segundos após iniciar (aguarda a janela carregar)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 10_000);
+}
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -13,10 +13,12 @@
     "deploy": "node scripts/deploy.cjs",
     "build:dir": "npm run build:vite && electron-builder --win --dir && start release\\win-unpacked\\ApexDynamics.exe",
     "build:win": "npm run build:vite && electron-builder --win",
-    "build:mac": "npm run build:vite && electron-builder --mac"
+    "build:mac": "npm run build:vite && electron-builder --mac",
+    "release:win": "npm run build:vite && electron-builder --win --publish always"
   },
   "main": "electron/main.cjs",
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "gopro-telemetry": "^1.2.11",
     "gpmf-extract": "^0.3.2",
     "lucide-react": "^0.263.1",
@@ -80,6 +82,11 @@
       "deleteAppDataOnUninstall": false,
       "license": "public/license.rtf"
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "liviacasarini",
+      "repo": "Apex-Dynamics",
+      "releaseType": "release"
+    }
   }
 }
