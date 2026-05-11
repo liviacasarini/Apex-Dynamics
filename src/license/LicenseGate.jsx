@@ -1,16 +1,20 @@
 /**
- * LicenseGate.jsx — Modo Standalone (Offline)
+ * LicenseGate.jsx — Autenticação via ApexServer
  *
- * Autenticação local sem dependência de rede ou servidor.
- * Credenciais fixas: Admin123 / ApexDynamics2026
+ * Fluxo de autenticação:
+ *  1. Abertura → verifica certificado RS256 salvo localmente
+ *  2. Certificado válido → acesso liberado (sem internet)
+ *  3. Certificado expirado → tenta renovar via /api/auth/session-certificate
+ *  4. Sem sessão → exibe formulário de login real (credenciais do ApexIdentityManager)
+ *
+ * Sessão salva em localStorage (chave: rt_session):
+ *  { certificate, token, username, apexHash, email, role }
  */
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/context/ThemeContext';
 
 const SESSION_KEY = 'rt_session';
-const FIXED_USER  = 'Admin123';
-const FIXED_PASS  = 'ApexDynamics2026';
 
 /* ─── Estilos ────────────────────────────────────────────────────────── */
 
@@ -103,12 +107,29 @@ function EyeIcon({ open }) {
   );
 }
 
+/* ─── Helpers ────────────────────────────────────────────────────────── */
+
+function saveSession(data) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
 /* ─── Componente ─────────────────────────────────────────────────────── */
 
 export default function LicenseGate({ children }) {
   const { isDark, toggleTheme } = useTheme();
 
-  const [status,    setStatus]    = useState('checking');
+  const [status,    setStatus]    = useState('checking'); // checking | login | valid | renewing
   const [username,  setUsername]  = useState('');
   const [password,  setPassword]  = useState('');
   const [message,   setMessage]   = useState('');
@@ -118,23 +139,87 @@ export default function LicenseGate({ children }) {
   const [userFocus, setUserFocus] = useState(false);
   const [passFocus, setPassFocus] = useState(false);
 
-  /* ── Verificar sessão salva ao abrir ─────────────────────────────── */
+  /* ── Verificar sessão ao abrir ───────────────────────────────────── */
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const session = JSON.parse(raw);
-        if (session?.authenticated) {
+    async function checkSession() {
+      const session = loadSession();
+
+      if (!session?.certificate) {
+        setStatus('login');
+        return;
+      }
+
+      // Verifica certificado RS256 localmente (sem internet)
+      const check = await window.electronAPI.checkCertificate(session.certificate);
+
+      if (check.valid && !check.expired) {
+        // Certificado válido → acesso liberado
+        setStatus('valid');
+        return;
+      }
+
+      if (check.valid && check.expired) {
+        // Expirado → tenta renovar com o token salvo
+        setStatus('renewing');
+        if (!session.token) {
+          clearSession();
+          setStatus('login');
+          setMessage('Sua sessão expirou. Faça login novamente.');
+          setIsError(true);
+          return;
+        }
+
+        const renewal = await window.electronAPI.requestCertificate(session.token);
+
+        if (renewal.success && renewal.certificate) {
+          saveSession({ ...session, certificate: renewal.certificate });
           setStatus('valid');
           return;
         }
+
+        if (renewal.offline) {
+          // Sem internet e certificado expirado → bloqueia
+          clearSession();
+          setStatus('login');
+          setMessage('Certificado expirado. Conecte-se à internet para renovar.');
+          setIsError(true);
+          return;
+        }
+
+        if (renewal.banned) {
+          clearSession();
+          setStatus('login');
+          setMessage('Conta banida ou inativa. Entre em contato com o suporte.');
+          setIsError(true);
+          return;
+        }
+
+        // Token JWT expirado (>7 dias sem login) → força re-login
+        clearSession();
+        setStatus('login');
+        setMessage('Sua licença expirou (7 dias). Faça login novamente.');
+        setIsError(true);
+        return;
       }
-    } catch { /* ignora */ }
-    setStatus('login');
+
+      // Certificado inválido (adulterado ou HWID errado)
+      clearSession();
+      setStatus('login');
+    }
+
+    // Registra listener para ban em tempo real
+    window.electronAPI?.onForcedLogout?.(() => {
+      clearSession();
+      setStatus('login');
+      setMessage('Sua conta foi banida. Entre em contato com o suporte.');
+      setIsError(true);
+    });
+
+    checkSession();
   }, []);
 
-  /* ── Login offline com credenciais fixas ─────────────────────────── */
-  const handleLogin = () => {
+  /* ── Login real via ApexServer ───────────────────────────────────── */
+  const handleLogin = async () => {
     const user = username.trim();
     const pass = password;
 
@@ -144,17 +229,42 @@ export default function LicenseGate({ children }) {
     setLogging(true);
     setMessage('');
 
-    if (user === FIXED_USER && pass === FIXED_PASS) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ authenticated: true, username: user }));
-      setMessage('Login realizado com sucesso!');
-      setIsError(false);
-      setTimeout(() => setStatus('valid'), 600);
-    } else {
-      setMessage('Usuário ou senha incorretos.');
-      setIsError(true);
-    }
+    try {
+      const result = await window.electronAPI.login(user, pass);
 
-    setLogging(false);
+      if (result.success) {
+        // Salva sessão completa com certificado RS256
+        saveSession({
+          certificate: result.certificate || null,
+          token:       result.token,
+          username:    result.username || user,
+          apexHash:    result.apexHash || null,
+          email:       result.email    || null,
+          role:        result.role     || 'user',
+        });
+        setMessage('');
+        setStatus('valid');
+        return;
+      }
+
+      // Erros do servidor
+      if (result.banned) {
+        setMessage('Esta máquina foi banida. Entre em contato com o suporte.');
+      } else if (result.locked) {
+        setMessage('Acesso bloqueado por excesso de tentativas. Tente novamente em 30 minutos.');
+      } else if (result.offline) {
+        setMessage('Sem conexão com o servidor. Verifique sua internet.');
+      } else {
+        setMessage(result.message || 'Usuário ou senha incorretos.');
+      }
+      setIsError(true);
+
+    } catch {
+      setMessage('Erro inesperado. Tente novamente.');
+      setIsError(true);
+    } finally {
+      setLogging(false);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -201,8 +311,8 @@ export default function LicenseGate({ children }) {
     </button>
   );
 
-  /* ── Render: verificando sessão ──────────────────────────────────── */
-  if (status === 'checking') {
+  /* ── Render: verificando / renovando sessão ──────────────────────── */
+  if (status === 'checking' || status === 'renewing') {
     return (
       <div style={dynStyles.loading}>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -210,7 +320,9 @@ export default function LicenseGate({ children }) {
         <img src="./apex-icon.png" alt="Apex Dynamics"
              style={{ width: 180, height: 'auto', objectFit: 'contain', marginBottom: 8 }} />
         <div style={styles.spinner} />
-        <span style={dynStyles.loadingText}>Verificando sessão...</span>
+        <span style={dynStyles.loadingText}>
+          {status === 'renewing' ? 'Renovando licença…' : 'Verificando sessão…'}
+        </span>
       </div>
     );
   }
@@ -234,7 +346,7 @@ export default function LicenseGate({ children }) {
 
         <h1 style={dynStyles.title}>Bem-vindo de volta</h1>
         <p style={dynStyles.subtitle}>
-          Entre com suas credenciais para acessar o software.
+          Use as credenciais cadastradas no <strong>ApexIdentityManager</strong>.
         </p>
 
         {/* Usuário */}
@@ -286,11 +398,11 @@ export default function LicenseGate({ children }) {
           disabled={logging || !username.trim() || !password}
           style={{ ...styles.button, ...(logging || !username.trim() || !password ? styles.buttonDisabled : {}) }}
         >
-          {logging ? 'Autenticando...' : 'Entrar'}
+          {logging ? 'Autenticando…' : 'Entrar'}
         </button>
 
         <div style={dynStyles.info}>
-          Versão standalone — acesso local sem necessidade de internet.
+          Licença válida por 7 dias · Renovação automática ao abrir o app
         </div>
       </div>
     </div>

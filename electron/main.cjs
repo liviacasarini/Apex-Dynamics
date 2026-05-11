@@ -23,7 +23,7 @@ const { getHWID } = require('./hwid.cjs');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 
-const APEX_SERVER = 'apexserver-production.up.railway.app';
+const APEX_SERVER = 'api.apexdynamics.store';
 const APEX_PORT   = 443;
 
 /* ── Estado global de sessão ──────────────────────────────────────── */
@@ -315,15 +315,18 @@ function startTeamHttpServer() {
   });
 }
 
-/** Chave pública RSA embutida — usada para verificar certificados RS256 localmente. */
+/** Chave pública RSA embutida — usada para verificar certificados RS256 localmente.
+ *  Gerada em FASE 2 junto com a chave privada no ApexServer (Oracle Cloud).
+ *  Certificados válidos por 7 dias corridos.
+ */
 const RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArMpSSe3lP1eM64JMut9A
-A5dOhhMruIu3Z6yzOVnNJl/M2n55SL8VFkg/TKUhQx7rJx+Xj+w+IFTRk1d69ic/
-nWyTzWdhkIbgZmAw1zcHrjlqVDkV+pr8rCDExgTu0IDnZVwR5JYuUOeA7oMll3ym
-lq1hsEGuujOZIdYk9wAtbOc+RYBjzQRvMcbzC2LLHW0wW4j978l7Y65rAIRtMRXO
-rA2TwfXsDUn6WMgM7qEgyl0QR7kPMBqrhpjV87SE5XlajmYkXHyc+YXA5eUnbWm9
-FPvWGbcSMId6gDHdhj7ZWQayQoYEIRFmtSqHqHqx8k4zOMPJGf3QScSOnqzqBrrq
-zQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqMwAeUvphxb/cDQdFucE
+60OR+kad7c6xAGfA4vPlh0PsMb3mpHLENdedAequHx4Mzg5iYkO/ZsycsEbIyK7g
+Sgo+hsUSAraHlTXSEsP7x2hQi5z9u+H01Zc0LioQFs4g6pqrL2LSVTgrsDIPn3aL
+5ku4/Z7csIhBv10U1TCLuV/m56OxffrxH2fr2oelF1sUleTwPExnqKH1bhkD1SQK
+2LflKrGodwLzHOPIyUH+pJ8Pg6xlFmZlu4I6bwBquKe3R9AxD7qj1vyHv77B0agB
+TiyxZ9VXTbqRLiOA/e4Ui+H6qADijfRsVxXJkz7hFb8BbhTtP4c8VTsKJcmhI2nK
+BwIDAQAB
 -----END PUBLIC KEY-----`;
 
 /** Em dev (não empacotado), carrega localhost; em produção, carrega o build */
