@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useColors } from '@/context/ThemeContext';
 import { getTabsForVehicle } from '@/constants/tabs';
+import { isTabEditable, isComingSoon } from '@/license/entitlements';
 
 const TELEMETRY_ONLY = new Set(['laps', 'wot', 'report', 'track']);
 const ORDER_KEY_BASE = 'rt_tab_order';
@@ -237,7 +238,14 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
               }}
             >
               <span style={{ fontSize: 15, pointerEvents: 'none' }}>{tab.icon}</span>
-              <span style={{ pointerEvents: 'none' }}>{tab.label}</span>
+              <span style={{ pointerEvents: 'none', flex: 1 }}>{tab.label}</span>
+              {isTabEditable(tab.id) ? null : isComingSoon(tab.id) ? (
+                <span style={{ pointerEvents: 'none', fontSize: 11, opacity: 0.8 }}
+                      title="Funcionalidade futura — em breve">🔜</span>
+              ) : (
+                <span style={{ pointerEvents: 'none', fontSize: 11, opacity: 0.7 }}
+                      title="Aba não incluída no seu plano (somente leitura)">🔒</span>
+              )}
             </div>
           );
         })}

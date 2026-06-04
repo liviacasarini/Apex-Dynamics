@@ -4,6 +4,7 @@
  * Aba de gerenciamento de equipe no desktop.
  * Exibe: servidor (QR code / IP), dispositivos conectados,
  * medições pendentes (aprovar/ignorar), cronômetros e chat da equipe.
+ * Também expõe seções de nuvem: Visão Geral e Sessão.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -45,6 +46,12 @@ function fmtTs(iso) {
   catch { return iso; }
 }
 
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString('pt-BR'); }
+  catch { return iso; }
+}
+
 export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
   const COLORS = useColors();
   const theme  = makeTheme(COLORS);
@@ -57,13 +64,32 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     sendEmergency,
   } = useTeam();
 
-  const [activeSection, setActiveSection] = useState('conexao'); // 'conexao' | 'dispositivos' | 'notificacoes' | 'chat'
+  const [activeSection, setActiveSection] = useState('conexao');
   const [chatInput,     setChatInput]     = useState('');
+  const [chatMode,      setChatMode]      = useState('local'); // 'local' | 'cloud'
+  const [cloudMessages, setCloudMessages] = useState([]);
+  const [cloudChatInput, setCloudChatInput] = useState('');
+  const [cloudChatLoading, setCloudChatLoading] = useState(false);
   const [senderName,    setSenderName]    = useState(senderNameRef.current);
   const [sessionInput,  setSessionInput]  = useState('');
-  const [emergencyMsg, setEmergencyMsg] = useState('');
+  const [emergencyMsg,  setEmergencyMsg]  = useState('');
   const [emergencySent, setEmergencySent] = useState(false);
-  const chatEndRef = useRef(null);
+
+  // Cloud: Visão Geral
+  const [cloudCars,       setCloudCars]       = useState([]);
+  const [cloudCarData,    setCloudCarData]     = useState([]);
+  const [cloudTrackCond,  setCloudTrackCond]   = useState(null);
+  const [cloudMembers,    setCloudMembers]     = useState([]);
+  const [cloudLoading,    setCloudLoading]     = useState(false);
+
+  // Cloud: Sessão
+  const [activeSession,     setActiveSession]     = useState(null);
+  const [sessionLoading,    setSessionLoading]    = useState(false);
+  const [newSessionName,    setNewSessionName]    = useState('');
+  const [sessionFeedback,   setSessionFeedback]   = useState('');
+
+  const chatEndRef      = useRef(null);
+  const cloudChatEndRef = useRef(null);
 
   useEffect(() => {
     refreshServerInfo();
@@ -76,6 +102,74 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     }
   }, [activeSection, messages.length]);
 
+  useEffect(() => {
+    if (activeSection === 'visao-geral') {
+      loadCloudOverview();
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection === 'sessao') {
+      loadActiveSession();
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (chatMode === 'cloud' && activeSection === 'chat') {
+      loadCloudMessages();
+    }
+  }, [chatMode, activeSection]);
+
+  useEffect(() => {
+    if (chatMode === 'cloud') {
+      setTimeout(() => cloudChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    }
+  }, [cloudMessages.length]);
+
+  async function loadCloudOverview() {
+    setCloudLoading(true);
+    try {
+      const [cars, carData, trackCond, members] = await Promise.all([
+        window.cloudTeamAPI?.getCars(),
+        window.cloudTeamAPI?.getLatestCarData(),
+        window.cloudTeamAPI?.getLatestTrackCond(),
+        window.cloudTeamAPI?.getMembers(),
+      ]);
+      setCloudCars(Array.isArray(cars?.cars ?? cars) ? (cars?.cars ?? cars) : []);
+      setCloudCarData(Array.isArray(carData?.data ?? carData) ? (carData?.data ?? carData) : []);
+      setCloudTrackCond(trackCond?.condition ?? trackCond ?? null);
+      setCloudMembers(Array.isArray(members?.members ?? members) ? (members?.members ?? members) : []);
+    } catch (e) {
+      console.error('Cloud overview error:', e);
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  async function loadActiveSession() {
+    setSessionLoading(true);
+    try {
+      const res = await window.cloudTeamAPI?.getActiveSession();
+      setActiveSession(res?.session ?? res ?? null);
+    } catch (e) {
+      console.error('Cloud session error:', e);
+    } finally {
+      setSessionLoading(false);
+    }
+  }
+
+  async function loadCloudMessages() {
+    setCloudChatLoading(true);
+    try {
+      const res = await window.cloudTeamAPI?.getMessages();
+      setCloudMessages(Array.isArray(res?.messages ?? res) ? (res?.messages ?? res) : []);
+    } catch (e) {
+      console.error('Cloud messages error:', e);
+    } finally {
+      setCloudChatLoading(false);
+    }
+  }
+
   const handleSendChat = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -83,11 +177,62 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     setChatInput('');
   };
 
+  const handleSendCloudChat = async (e) => {
+    e.preventDefault();
+    if (!cloudChatInput.trim()) return;
+    const text = cloudChatInput.trim();
+    setCloudChatInput('');
+    try {
+      await window.cloudTeamAPI?.sendMessage(text);
+      await loadCloudMessages();
+    } catch (e) {
+      console.error('Cloud send message error:', e);
+    }
+  };
+
   const handleApprove = (m) => {
-    // Aplica os dados na aba correspondente IMEDIATAMENTE
     try { onApplyMeasurement?.(m); } catch (e) { console.error('Erro ao aplicar medição:', e); }
-    // Depois aprova (envia confirmação pro celular)
     approveMeasurement(m.id, m.deviceId).catch(() => {});
+  };
+
+  const handleStartSession = async () => {
+    const name = newSessionName.trim();
+    if (!name) return;
+    setSessionLoading(true);
+    setSessionFeedback('');
+    try {
+      const res = await window.cloudTeamAPI?.startSession(name);
+      if (res?.success || res?.session) {
+        setNewSessionName('');
+        setSessionFeedback('Sessão iniciada com sucesso!');
+        await loadActiveSession();
+      } else {
+        setSessionFeedback(res?.message || 'Erro ao iniciar sessão.');
+      }
+    } catch {
+      setSessionFeedback('Erro ao iniciar sessão.');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!activeSession?.id) return;
+    setSessionLoading(true);
+    setSessionFeedback('');
+    try {
+      const res = await window.cloudTeamAPI?.endSession(activeSession.id);
+      if (res?.success || res?.session) {
+        setSessionFeedback('Sessão encerrada.');
+        setActiveSession(null);
+      } else {
+        setSessionFeedback(res?.message || 'Erro ao encerrar sessão.');
+      }
+    } catch {
+      setSessionFeedback('Erro ao encerrar sessão.');
+    } finally {
+      setSessionLoading(false);
+    }
   };
 
   const C = COLORS;
@@ -97,6 +242,8 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     { key: 'dispositivos',  label: `📱 Dispositivos ${devices.length > 0 ? `(${devices.length})` : ''}` },
     { key: 'notificacoes',  label: `🔔 Medições ${pendingCount > 0 ? `(${pendingCount})` : ''}` },
     { key: 'chat',          label: `💬 Chat ${unreadChat > 0 ? `(${unreadChat})` : ''}` },
+    { key: 'visao-geral',   label: '📊 Visão Geral' },
+    { key: 'sessao',        label: '🏁 Sessão' },
     { key: 'emergencia',    label: '🚨 EMERGÊNCIA' },
   ];
 
@@ -382,66 +529,425 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 
       {/* ─── Seção: Chat ─── */}
       {activeSection === 'chat' && (
-        <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 520 }}>
-          <div style={theme.cardTitle}>💬 Chat da Equipe</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-            gap: 8, padding: '4px 0', marginBottom: 12 }}>
-            {messages.length === 0 && (
-              <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
-                O chat da equipe aparecerá aqui.
-              </div>
-            )}
-            {messages.map((msg, i) => {
-              const isSystem = msg.type === 'chat:system';
-              const isMe     = msg.from?.deviceId === 'desktop';
-              if (isSystem) return (
-                <div key={msg.id || i} style={{ textAlign: 'center', fontSize: 11,
-                  color: C.textMuted, fontStyle: 'italic', padding: '2px 0' }}>
-                  {msg.content?.text}
-                </div>
-              );
-              return (
-                <div key={msg.id || i} style={{
-                  display: 'flex', flexDirection: 'column',
-                  alignItems: isMe ? 'flex-end' : 'flex-start',
-                }}>
-                  <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2, paddingLeft: 4 }}>
-                    {isMe ? 'Você' : msg.from?.name} · {fmtTs(msg.timestamp)}
-                  </div>
-                  <div style={{
-                    maxWidth: '75%', padding: '8px 12px', borderRadius: 10, fontSize: 13,
-                    background: isMe ? `${C.blue}25` : `${C.bgCard}`,
-                    border: `1px solid ${isMe ? C.blue + '40' : C.border + '44'}`,
-                    color: C.textPrimary,
-                  }}>
-                    {msg.content?.text}
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={chatEndRef} />
+          {/* Toggle Local / Nuvem */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[{ key: 'local', label: '📶 Local (Wi-Fi)' }, { key: 'cloud', label: '☁️ Nuvem' }].map(opt => (
+              <button key={opt.key} onClick={() => setChatMode(opt.key)} style={{
+                padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: chatMode === opt.key ? `${C.blue}20` : 'transparent',
+                border: `1px solid ${chatMode === opt.key ? C.blue : C.border}`,
+                color: chatMode === opt.key ? C.blue : C.textSecondary,
+              }}>
+                {opt.label}
+              </button>
+            ))}
           </div>
 
-          {/* Input */}
-          <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              placeholder="Digite uma mensagem..."
-              style={{ ...INPUT_STYLE, flex: 1 }}
-            />
-            <button type="submit" disabled={!chatInput.trim()} style={{
-              padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
-              background: chatInput.trim() ? C.blue : 'transparent',
-              color: chatInput.trim() ? '#fff' : C.textMuted,
-              border: `1px solid ${chatInput.trim() ? C.blue : C.border}`,
-              cursor: chatInput.trim() ? 'pointer' : 'default',
+          {/* Chat Local */}
+          {chatMode === 'local' && (
+            <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 480 }}>
+              <div style={theme.cardTitle}>💬 Chat da Equipe — Wi-Fi Local</div>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+                gap: 8, padding: '4px 0', marginBottom: 12 }}>
+                {messages.length === 0 && (
+                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
+                    O chat da equipe aparecerá aqui.
+                  </div>
+                )}
+                {messages.map((msg, i) => {
+                  const isSystem = msg.type === 'chat:system';
+                  const isMe     = msg.from?.deviceId === 'desktop';
+                  if (isSystem) return (
+                    <div key={msg.id || i} style={{ textAlign: 'center', fontSize: 11,
+                      color: C.textMuted, fontStyle: 'italic', padding: '2px 0' }}>
+                      {msg.content?.text}
+                    </div>
+                  );
+                  return (
+                    <div key={msg.id || i} style={{
+                      display: 'flex', flexDirection: 'column',
+                      alignItems: isMe ? 'flex-end' : 'flex-start',
+                    }}>
+                      <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2, paddingLeft: 4 }}>
+                        {isMe ? 'Você' : msg.from?.name} · {fmtTs(msg.timestamp)}
+                      </div>
+                      <div style={{
+                        maxWidth: '75%', padding: '8px 12px', borderRadius: 10, fontSize: 13,
+                        background: isMe ? `${C.blue}25` : `${C.bgCard}`,
+                        border: `1px solid ${isMe ? C.blue + '40' : C.border + '44'}`,
+                        color: C.textPrimary,
+                      }}>
+                        {msg.content?.text}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+              <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  placeholder="Digite uma mensagem..."
+                  style={{ ...INPUT_STYLE, flex: 1 }}
+                />
+                <button type="submit" disabled={!chatInput.trim()} style={{
+                  padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
+                  background: chatInput.trim() ? C.blue : 'transparent',
+                  color: chatInput.trim() ? '#fff' : C.textMuted,
+                  border: `1px solid ${chatInput.trim() ? C.blue : C.border}`,
+                  cursor: chatInput.trim() ? 'pointer' : 'default',
+                }}>
+                  Enviar
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Chat Nuvem */}
+          {chatMode === 'cloud' && (
+            <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 480 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={theme.cardTitle}>☁️ Chat da Equipe — Nuvem</div>
+                <button onClick={loadCloudMessages} disabled={cloudChatLoading} style={{
+                  padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  background: 'transparent', color: C.textSecondary, border: `1px solid ${C.border}`,
+                }}>
+                  🔄 Atualizar
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+                gap: 8, padding: '4px 0', marginBottom: 12 }}>
+                {cloudChatLoading && (
+                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
+                    Carregando mensagens...
+                  </div>
+                )}
+                {!cloudChatLoading && cloudMessages.length === 0 && (
+                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
+                    Nenhuma mensagem na nuvem ainda.
+                  </div>
+                )}
+                {cloudMessages.map((msg, i) => (
+                  <div key={msg.id || i} style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                  }}>
+                    <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2, paddingLeft: 4 }}>
+                      {msg.sender_username || msg.sender || 'Equipe'} · {fmtTs(msg.created_at || msg.timestamp)}
+                    </div>
+                    <div style={{
+                      maxWidth: '75%', padding: '8px 12px', borderRadius: 10, fontSize: 13,
+                      background: C.bgCard, border: `1px solid ${C.border}44`, color: C.textPrimary,
+                    }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                <div ref={cloudChatEndRef} />
+              </div>
+              <form onSubmit={handleSendCloudChat} style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={cloudChatInput}
+                  onChange={e => setCloudChatInput(e.target.value)}
+                  placeholder="Digite uma mensagem para a nuvem..."
+                  style={{ ...INPUT_STYLE, flex: 1 }}
+                />
+                <button type="submit" disabled={!cloudChatInput.trim()} style={{
+                  padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
+                  background: cloudChatInput.trim() ? C.blue : 'transparent',
+                  color: cloudChatInput.trim() ? '#fff' : C.textMuted,
+                  border: `1px solid ${cloudChatInput.trim() ? C.blue : C.border}`,
+                  cursor: cloudChatInput.trim() ? 'pointer' : 'default',
+                }}>
+                  Enviar
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Seção: Visão Geral (Cloud) ─── */}
+      {activeSection === 'visao-geral' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Header com botão Atualizar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.textPrimary }}>
+              📊 Visão Geral da Equipe — Nuvem
+            </div>
+            <button onClick={loadCloudOverview} disabled={cloudLoading} style={{
+              padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: cloudLoading ? 'default' : 'pointer',
+              background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`,
+              opacity: cloudLoading ? 0.6 : 1,
             }}>
-              Enviar
+              {cloudLoading ? '⏳ Carregando...' : '🔄 Atualizar'}
             </button>
-          </form>
+          </div>
+
+          {/* Cards de Carros */}
+          {cloudCars.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.textSecondary }}>🏎️ Carros</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {cloudCars.map((car, idx) => {
+                  // Find matching car data
+                  const carDataArr = Array.isArray(cloudCarData) ? cloudCarData : [];
+                  const latestData = carDataArr.find(d => d.car_id === car.id) || null;
+                  // Find assigned member
+                  const assignedMember = cloudMembers.find(m => m.id === car.assigned_user_id || m.user_id === car.assigned_user_id);
+
+                  return (
+                    <div key={car.id || idx} style={{
+                      ...theme.card, flex: '1 1 300px', minWidth: 280, maxWidth: 440,
+                    }}>
+                      {/* Car header */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                        <div style={{
+                          width: 16, height: 16, borderRadius: '50%',
+                          background: car.color || C.blue,
+                          border: `2px solid ${C.border}`,
+                          flexShrink: 0,
+                        }} />
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: C.textPrimary }}>
+                            #{car.number ?? car.car_number ?? '—'} {car.name ?? car.car_name ?? ''}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.textMuted }}>
+                            👤 {assignedMember?.username ?? assignedMember?.name ?? '— não atribuído'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Tire data */}
+                      {latestData && (
+                        <>
+                          <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase',
+                            letterSpacing: '0.7px', marginBottom: 6 }}>Pneus</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+                            {[
+                              { pos: 'FL', label: 'Dianteiro Esq.' },
+                              { pos: 'FR', label: 'Dianteiro Dir.' },
+                              { pos: 'RL', label: 'Traseiro Esq.' },
+                              { pos: 'RR', label: 'Traseiro Dir.' },
+                            ].map(({ pos, label }) => {
+                              const pressure = latestData[`tire_pressure_${pos.toLowerCase()}`]
+                                ?? latestData[`pressure_${pos}`]
+                                ?? latestData?.tires?.[pos]?.pressure
+                                ?? null;
+                              return (
+                                <div key={pos} style={{
+                                  padding: '6px 10px', borderRadius: 7,
+                                  background: `${C.bgCard}80`, border: `1px solid ${C.border}22`,
+                                }}>
+                                  <div style={{ fontSize: 10, color: C.textMuted }}>{pos} — {label}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary, fontFamily: 'monospace' }}>
+                                    {pressure !== null && pressure !== undefined ? `${pressure} psi` : '—'}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                            {(latestData.compound || latestData.tire_compound) && (
+                              <span style={{ padding: '3px 10px', borderRadius: 5, fontWeight: 600,
+                                background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}30` }}>
+                                {latestData.compound ?? latestData.tire_compound}
+                              </span>
+                            )}
+                            {(latestData.fuel !== undefined && latestData.fuel !== null) && (
+                              <span style={{ padding: '3px 10px', borderRadius: 5,
+                                background: `${C.bgCard}80`, color: C.textSecondary, border: `1px solid ${C.border}33` }}>
+                                ⛽ {latestData.fuel}L
+                              </span>
+                            )}
+                          </div>
+                          {latestData.notes && (
+                            <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>
+                              {latestData.notes}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {!latestData && (
+                        <div style={{ fontSize: 12, color: C.textMuted }}>Sem dados de pneus disponíveis.</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {cloudCars.length === 0 && !cloudLoading && (
+            <div style={{ ...theme.card, textAlign: 'center', padding: '28px 0', color: C.textMuted, fontSize: 13 }}>
+              Nenhum carro registrado na nuvem.
+            </div>
+          )}
+
+          {/* Track Conditions */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>🌤️ Condições de Pista</div>
+            {cloudTrackCond ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {[
+                  { label: 'Temp. Asfalto', value: cloudTrackCond.asphalt_temp ?? cloudTrackCond.track_temp, unit: '°C' },
+                  { label: 'Temp. Ar', value: cloudTrackCond.air_temp, unit: '°C' },
+                  { label: 'Humidade', value: cloudTrackCond.humidity, unit: '%' },
+                  { label: 'Condição', value: cloudTrackCond.condition ?? cloudTrackCond.status, unit: '' },
+                ].map(({ label, value, unit }) => (
+                  <div key={label} style={{
+                    flex: '1 1 120px', padding: '10px 14px', borderRadius: 8,
+                    background: `${C.bgCard}80`, border: `1px solid ${C.border}22`, textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.textPrimary, fontFamily: 'monospace' }}>
+                      {value !== undefined && value !== null ? `${value}${unit}` : '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: C.textMuted }}>
+                {cloudLoading ? 'Carregando...' : 'Nenhuma condição de pista disponível.'}
+              </div>
+            )}
+          </div>
+
+          {/* Members */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>👥 Membros da Equipe</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 10 }}>
+              Wi-Fi Local: {devices.length} online · Nuvem: {cloudMembers.length} cadastrado{cloudMembers.length !== 1 ? 's' : ''}
+            </div>
+            {cloudMembers.length === 0 && devices.length === 0 && (
+              <div style={{ fontSize: 12, color: C.textMuted }}>Nenhum membro encontrado.</div>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {/* Local (Wi-Fi) devices */}
+              {devices.map(d => (
+                <div key={`local-${d.deviceId}`} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                  borderRadius: 8, background: `${C.green}10`, border: `1px solid ${C.green}30`,
+                }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.green,
+                    boxShadow: `0 0 5px ${C.green}` }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{d.name}</div>
+                    <div style={{ fontSize: 10, color: C.textMuted }}>{ROLE_LABEL[d.role] || d.role} · Wi-Fi</div>
+                  </div>
+                </div>
+              ))}
+              {/* Cloud members */}
+              {cloudMembers.map((m, idx) => (
+                <div key={`cloud-${m.id || idx}`} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                  borderRadius: 8, background: `${C.blue}10`, border: `1px solid ${C.blue}25`,
+                }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.blue }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>
+                      {m.username ?? m.name ?? '—'}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.textMuted }}>
+                      {m.role ?? 'Membro'} · Nuvem
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Seção: Sessão (Cloud) ─── */}
+      {activeSection === 'sessao' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.textPrimary }}>🏁 Gestão de Sessão — Nuvem</div>
+
+          {/* Active session card */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>Sessão Atual</div>
+            {sessionLoading ? (
+              <div style={{ fontSize: 12, color: C.textMuted }}>Carregando...</div>
+            ) : activeSession ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{
+                  padding: '12px 16px', borderRadius: 9,
+                  background: `${C.green}10`, border: `1px solid ${C.green}35`,
+                }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: C.green, marginBottom: 4 }}>
+                    🟢 {activeSession.name ?? activeSession.session_name ?? 'Sem nome'}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>
+                    Iniciada em: {fmtDateTime(activeSession.started_at ?? activeSession.created_at)}
+                  </div>
+                  {activeSession.id && (
+                    <div style={{ fontSize: 10, color: C.textMuted, fontFamily: 'monospace', marginTop: 2 }}>
+                      ID: {activeSession.id}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={handleEndSession}
+                  disabled={sessionLoading}
+                  style={{
+                    padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    cursor: sessionLoading ? 'default' : 'pointer', width: '100%',
+                    background: `${C.accent}18`, color: C.accent,
+                    border: `1px solid ${C.accent}40`,
+                    opacity: sessionLoading ? 0.6 : 1,
+                  }}
+                >
+                  🏁 Encerrar Sessão
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: C.textMuted }}>Nenhuma sessão ativa no momento.</div>
+            )}
+          </div>
+
+          {/* Start session */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>Iniciar Nova Sessão</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Nome da sessão</div>
+                <input
+                  value={newSessionName}
+                  onChange={e => setNewSessionName(e.target.value)}
+                  placeholder="Ex: Treino Livre 1 — Interlagos"
+                  style={INPUT_STYLE}
+                  onKeyDown={e => e.key === 'Enter' && handleStartSession()}
+                />
+              </div>
+              <button
+                onClick={handleStartSession}
+                disabled={!newSessionName.trim() || sessionLoading}
+                style={{
+                  padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                  cursor: newSessionName.trim() && !sessionLoading ? 'pointer' : 'default', width: '100%',
+                  background: newSessionName.trim() ? `${C.blue}22` : 'transparent',
+                  color: newSessionName.trim() ? C.blue : C.textMuted,
+                  border: `1px solid ${newSessionName.trim() ? C.blue + '50' : C.border}`,
+                  opacity: sessionLoading ? 0.6 : 1,
+                }}
+              >
+                🚀 Iniciar Sessão
+              </button>
+              {sessionFeedback && (
+                <div style={{
+                  fontSize: 12, textAlign: 'center', padding: '6px 0',
+                  color: sessionFeedback.includes('sucesso') || sessionFeedback.includes('Sessão iniciada')
+                    ? C.green : C.accent,
+                }}>
+                  {sessionFeedback}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -480,6 +986,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
               onClick={() => {
                 if (!emergencyMsg.trim()) return;
                 sendEmergency(emergencyMsg.trim());
+                window.cloudTeamAPI?.triggerEmergency(emergencyMsg.trim());
                 setEmergencySent(true);
               }}
               disabled={!emergencyMsg.trim() || emergencySent}
@@ -498,7 +1005,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 
             {emergencySent && (
               <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: C.green }}>
-                Alerta enviado para {devices.length} dispositivo{devices.length !== 1 ? 's' : ''} às {new Date().toLocaleTimeString('pt-BR')}
+                Alerta enviado para {devices.length} dispositivo{devices.length !== 1 ? 's' : ''} (Wi-Fi) + equipe via FCM às {new Date().toLocaleTimeString('pt-BR')}
               </div>
             )}
           </div>

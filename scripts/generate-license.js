@@ -41,7 +41,14 @@ function loadEnv() {
 }
 
 const envVars = loadEnv();
-const HMAC_SECRET = process.env.HMAC_SECRET || envVars.HMAC_SECRET || 'apex-rt-2025-hmac-verify-key';
+const HMAC_SECRET = process.env.HMAC_SECRET || envVars.HMAC_SECRET;
+
+if (!HMAC_SECRET) {
+  console.error('\n✗ ERRO: HMAC_SECRET não definido.');
+  console.error('  Defina-o no arquivo .env (não versionado) ou como variável de ambiente.');
+  console.error('  Exemplo (.env):  HMAC_SECRET=sua-chave-secreta-forte-aqui\n');
+  process.exit(1);
+}
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 

@@ -330,7 +330,7 @@ BwIDAQAB
 -----END PUBLIC KEY-----`;
 
 /** Em dev (não empacotado), carrega localhost; em produção, carrega o build */
-const isDev = !app.isPackaged;
+const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
 /* ── Helper: HTTPS POST genérico ──────────────────────────────────── */
 
@@ -349,7 +349,7 @@ function httpsPost(path, body, extraHeaders = {}) {
       headers:  {
         'Content-Type':   'application/json',
         'Content-Length': Buffer.byteLength(bodyStr),
-        'User-Agent':     'ApexDynamics/1.0.0',
+        'User-Agent':     `ApexDynamics/${app.getVersion()}`,
         ...extraHeaders,
       },
       timeout: 10000,
@@ -382,6 +382,31 @@ function httpsPost(path, body, extraHeaders = {}) {
   });
 }
 
+/** Requisição HTTPS GET simples para o ApexServer. */
+function httpsGet(path, extraHeaders = {}) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: APEX_SERVER, port: APEX_PORT, path, method: 'GET',
+      headers: { 'User-Agent': `ApexDynamics/${app.getVersion()}`, ...extraHeaders },
+      timeout: 8000,
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try { resolve({ ok: true, data: JSON.parse(data) }); }
+        catch { resolve({ ok: false, offline: false, error: 'Resposta inválida.' }); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, offline: true, error: 'Timeout.' }); });
+    req.on('error', (err) => {
+      const offline = ['ENOTFOUND','ECONNREFUSED','ETIMEDOUT','ECONNRESET'].includes(err.code);
+      resolve({ ok: false, offline, error: offline ? 'Sem conexão.' : 'Erro de rede.' });
+    });
+    req.end();
+  });
+}
+
 /* ── SSE: notificação instantânea de ban ───────────────────────────── */
 
 /**
@@ -403,7 +428,7 @@ function startSSE() {
       'Authorization': `Bearer ${sessionToken}`,
       'Accept':        'text/event-stream',
       'Cache-Control': 'no-cache',
-      'User-Agent':    'ApexDynamics/1.0.0',
+      'User-Agent':    `ApexDynamics/${app.getVersion()}`,
     },
     timeout: 0, // sem timeout — conexão persistente
   };
@@ -424,6 +449,11 @@ function startSSE() {
             sseStopped = true;
             stopSSE();
             mainWindow?.webContents.send('license:forcedLogout', { reason: 'banned' });
+          }
+          if (payload.type === 'entitlements_changed' || payload.type === 'import_config_changed') {
+            // Admin mudou abas ou config de importação — renova o certificado
+            // imediatamente para aplicar sem o cliente reiniciar.
+            refreshCertificateBackground();
           }
         } catch { /* ignora linhas mal formadas */ }
       }
@@ -481,7 +511,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       enableRemoteModule: false,
-      devTools: true,
+      devTools: isDev,
     },
     backgroundColor: '#0a0a0f',
     show: false,
@@ -715,6 +745,65 @@ ipcMain.handle('license:requestCertificate', async (_event, { token }) => {
   }
 });
 
+/* ── IPC: Retomar sessão ao abrir com cert válido ──────────────────── */
+/**
+ * Chamado pelo LicenseGate quando o app abre e o certificado local já é válido
+ * (sem passar pelo fluxo de login). Define sessionToken + sessionHwid e inicia
+ * o canal SSE — necessário para notificações em tempo real (entitlements, ban).
+ */
+ipcMain.handle('license:resumeSession', async (_event, { token, hwid }) => {
+  try {
+    if (!token || !hwid) return { success: false };
+    sessionToken = token;
+    sessionHwid  = hwid;
+    sseStopped   = false;
+    startSSE();
+    console.log('[resumeSession] sessão retomada, SSE iniciado');
+    return { success: true };
+  } catch (err) {
+    console.error('[resumeSession] erro:', err.message);
+    return { success: false };
+  }
+});
+
+/* ── IPC: Verificar versão de entitlements (cert-status) ───────────── */
+ipcMain.handle('license:checkCertStatus', async (_event, { ev, token, icv }) => {
+  try {
+    // Usa o token passado explicitamente (reabertura sem login)
+    // ou o sessionToken global (após login normal).
+    const authToken = token || sessionToken;
+    if (!authToken) return { success: false, changed: false };
+    const res = await httpsGet(`/api/auth/cert-status?ev=${ev ?? -1}&icv=${icv ?? -1}`, {
+      Authorization: `Bearer ${authToken}`,
+    });
+    if (!res.ok) return { success: false, changed: false, offline: res.offline };
+    return { success: true, ...res.data };
+  } catch {
+    return { success: false, changed: false };
+  }
+});
+
+/* ── Renovação silenciosa de certificado (entitlements mudaram via SSE) */
+async function refreshCertificateBackground() {
+  try {
+    if (!sessionToken || !sessionHwid) return;
+    const res = await httpsPost(
+      '/api/auth/session-certificate',
+      { hwid: sessionHwid },
+      { Authorization: `Bearer ${sessionToken}` }
+    );
+    if (res.ok && res.data?.success && res.data?.certificate) {
+      // Notifica o renderer para salvar o novo certificado e recarregar as abas
+      mainWindow?.webContents.send('license:entitlementsChanged', {
+        certificate: res.data.certificate,
+      });
+      console.log('[SSE] entitlements_changed — novo certificado emitido');
+    }
+  } catch (err) {
+    console.error('[SSE] refreshCertificateBackground error:', err.message);
+  }
+}
+
 /* ── IPC: Logout — fecha SSE e limpa sessão ────────────────────────── */
 
 ipcMain.handle('license:logout', () => {
@@ -867,6 +956,49 @@ ipcMain.handle('team:sendEmergency', (_e, { message }) => {
 /** Inicia/para servidor manualmente (o app inicia automático, mas pode ser parado pelo usuário) */
 ipcMain.handle('team:startServer', () => { startTeamServer(); return { ok: true }; });
 ipcMain.handle('team:stopServer',  () => { stopTeamServer();  return { ok: true }; });
+
+/* ── Cloud Team API ─────────────────────────────────────────────── */
+function cloudRequest(method, urlPath, body = null) {
+  return new Promise((resolve) => {
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: APEX_SERVER,
+      port: APEX_PORT,
+      path: urlPath,
+      method,
+      headers: {
+        'Authorization': `Bearer ${sessionToken || ''}`,
+        'Content-Type': 'application/json',
+        'User-Agent': `ApexDynamics/${app.getVersion()}`,
+        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+      },
+      timeout: 10000,
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve({ success: false, message: 'Resposta inválida.' }); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ success: false, message: 'Timeout.' }); });
+    req.on('error', () => resolve({ success: false, message: 'Erro de rede.' }));
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+ipcMain.handle('cloud:getMembers',        () => cloudRequest('GET',  '/api/team/members'));
+ipcMain.handle('cloud:getCars',           () => cloudRequest('GET',  '/api/team/cars'));
+ipcMain.handle('cloud:getMessages',       () => cloudRequest('GET',  '/api/team/messages?limit=50'));
+ipcMain.handle('cloud:sendMessage',       (_e, { content }) => cloudRequest('POST', '/api/team/messages', { content }));
+ipcMain.handle('cloud:triggerEmergency',  (_e, { reason }) => cloudRequest('POST',  '/api/team/emergency', { reason }));
+ipcMain.handle('cloud:getActiveSession',  () => cloudRequest('GET',  '/api/team/sessions/active'));
+ipcMain.handle('cloud:startSession',      (_e, { name }) => cloudRequest('POST', '/api/team/sessions', { name }));
+ipcMain.handle('cloud:endSession',        (_e, { id }) => cloudRequest('PUT', `/api/team/sessions/${id}/end`, {}));
+ipcMain.handle('cloud:getLatestCarData',  () => cloudRequest('GET',  '/api/team/car-data/latest'));
+ipcMain.handle('cloud:getLatestTrackCond',() => cloudRequest('GET',  '/api/team/track-conditions/latest'));
 
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 

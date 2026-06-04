@@ -4,7 +4,17 @@ dist/
 *.local
 .DS_Store
 .env
+.env.*
+!.env.example
 release/
+# Segredos e chaves — nunca commitar
+*.key
+*.pem
+*.pfx
+*.p12
+service-account*.json
+google-services.json
+.electron-src-backup/
 .claude/
 .expo/
 mobile/.expo/
@@ -12,3 +22,8 @@ mobile/android/build/
 mobile/android/app/build/
 mobile/android/.gradle/
 *.apk
+# Material gerado / ferramentas locais (não fazem parte do código do app)
+gerar_*.py
+ApexDynamics_Pitch*.py
+*.pdf
+*.docx

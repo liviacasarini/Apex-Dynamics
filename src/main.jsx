@@ -5,6 +5,15 @@ import LicenseGate from './license/LicenseGate';
 import { ThemeProvider } from './context/ThemeContext';
 import './styles/global.css';
 
+// Em produção (build), silencia console.log/info/debug para não poluir nem
+// expor detalhes internos. Mantém warn/error para diagnóstico de problemas.
+if (import.meta.env.PROD) {
+  const noop = () => {};
+  console.log = noop;
+  console.info = noop;
+  console.debug = noop;
+}
+
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }

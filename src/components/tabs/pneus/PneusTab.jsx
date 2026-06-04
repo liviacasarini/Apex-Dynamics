@@ -35,6 +35,76 @@ import { readLatestTemp, readRegulations } from '@/core/crossTabSync';
 import { REG_PESO_CHANGED_EVENT } from '@/context/CarWeightContext';
 import { TRACK_DATABASE } from '@/core/tracks';
 
+// ── Calculadora de pressão fria — Tier 3 (aprende do histórico de tireSets) ──
+// Estratégia: filtra conjuntos salvos do mesmo composto + mesma faixa de track temp,
+// calcula ΔP médio (build-up). Se ≥2 amostras, usa o aprendido. Senão, fallback físico.
+
+// Fallback físico: T_op estimado por composto + posição + track temp
+const COMPOUND_DELTA_T = {
+  'slick-ultra':  58, 'slick-soft': 52, 'slick-medium': 46, 'slick-hard': 40,
+  'slick-extra-hard': 36, 'slick': 46, 'street': 30, 'rain': 16, 'wet': 14,
+};
+function estimateTOp({ tTrackC, compoundType, position }) {
+  const t = parseFloat(tTrackC);
+  if (isNaN(t)) return null;
+  // Heurística por substring (compound vem como "slick-soft", "street-..", etc.)
+  let base = 46;
+  if (compoundType) {
+    const k = String(compoundType).toLowerCase();
+    if      (k.includes('ultra'))     base = 58;
+    else if (k.includes('soft'))      base = 52;
+    else if (k.includes('medium'))    base = 46;
+    else if (k.includes('extra'))     base = 36;
+    else if (k.includes('hard'))      base = 40;
+    else if (k.includes('slick'))     base = 46;
+    else if (k.includes('rain') || k.includes('wet')) base = 15;
+    else if (k.includes('street'))    base = 30;
+  }
+  const posDelta = position === 'rear' ? 5 : 0;
+  return t + base + posDelta;
+}
+function calcColdPSIPhysics({ pIdealPSI, tAmbC, tOpC, altitudeM = 0 }) {
+  if (!pIdealPSI || !tAmbC || tOpC == null || isNaN(tOpC)) return null;
+  const pAtmKpa = 101.325 * Math.pow(1 - 2.25577e-5 * (altitudeM || 0), 5.25588);
+  const pAtmPSI = pAtmKpa * 0.145038;
+  const tAmbK = parseFloat(tAmbC) + 273.15;
+  const tOpK  = parseFloat(tOpC)  + 273.15;
+  if (tOpK <= 0) return null;
+  const pIdealAbs = parseFloat(pIdealPSI) + pAtmPSI;
+  const pColdAbs  = pIdealAbs * (tAmbK / tOpK);
+  return pColdAbs - pAtmPSI;
+}
+
+// Procura no histórico de tireSets uma média de ΔP (hot−cold) para combo.
+// Filtra: mesmo compoundId, |trackTemp − alvo| ≤ 10°C (se trackTempAlvo informado).
+// position: 'front' | 'rear' | 'all' — restringe quais cantos contam.
+function learnDeltaPFromHistory({ tireSets = [], compoundId, trackTempTargetC, position = 'all' }) {
+  if (!compoundId || !tireSets.length) return null;
+  const target = parseFloat(trackTempTargetC);
+  const corners = position === 'front' ? ['fl','fr']
+                : position === 'rear'  ? ['rl','rr']
+                : ['fl','fr','rl','rr'];
+  const samples = [];
+  for (const ts of tireSets) {
+    const t = ts?.tyres;
+    if (!t || t.compound !== compoundId) continue;
+    if (!isNaN(target)) {
+      const tt = parseFloat(ts?.conditions?.trackTemp);
+      if (isNaN(tt) || Math.abs(tt - target) > 10) continue;
+    }
+    const deltas = [];
+    for (const k of corners) {
+      const c = parseFloat(t?.[k]?.cold);
+      const h = parseFloat(t?.[k]?.hot);
+      if (!isNaN(c) && !isNaN(h) && h > c) deltas.push(h - c);
+    }
+    if (deltas.length) samples.push(deltas.reduce((a,b)=>a+b,0) / deltas.length);
+  }
+  if (samples.length < 2) return null;
+  const mean = samples.reduce((a,b)=>a+b,0) / samples.length;
+  return { deltaP: mean, n: samples.length };
+}
+
 // ── Opções de composto (expandido com subtypes) ──────────────────────────────
 const COMPOUND_OPTIONS = [
   { value: '',              label: '— Selecionar —'      },
@@ -177,6 +247,11 @@ const DEFAULT_STINT = () => ({
   zFr: { inner: '', center: '', outer: '' },
   zRl: { inner: '', center: '', outer: '' },
   zRr: { inner: '', center: '', outer: '' },
+  // Temperaturas frias por zona (saída)
+  zFlCold: { inner: '', center: '', outer: '' },
+  zFrCold: { inner: '', center: '', outer: '' },
+  zRlCold: { inner: '', center: '', outer: '' },
+  zRrCold: { inner: '', center: '', outer: '' },
   trackTempRef: '',
   ambientTempRef: '',
   voltas: '',
@@ -844,6 +919,11 @@ export default function PneusTab({
   const [saved,            setSaved]            = useState(false);
   const [showSaved,        setShowSaved]        = useState(false);
   const [showRefDropdown,  setShowRefDropdown]  = useState(false);
+  const [showColdCalc,     setShowColdCalc]     = useState(false);
+  const [coldCalc,         setColdCalc]         = useState({
+    pIdeal: '', tAmb: '', tTrack: '', altitude: '',
+    compoundId: '', position: 'front',
+  });
   const [newGroupName,     setNewGroupName]     = useState('');
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
   const [selectedGroupId,  setSelectedGroupId]  = useState('');
@@ -1238,8 +1318,8 @@ export default function PneusTab({
     setStints((prev) => prev.map((s) => s.id === id ? { ...s, [field]: value } : s));
   };
 
-  const updateStintZone = (id, cornerKey, subfield, value) => {
-    const zKey = `z${cornerKey.charAt(0).toUpperCase()}${cornerKey.slice(1)}`;
+  const updateStintZone = (id, cornerKey, subfield, value, cold = false) => {
+    const zKey = `z${cornerKey.charAt(0).toUpperCase()}${cornerKey.slice(1)}${cold ? 'Cold' : ''}`;
     setStints((prev) => prev.map((s) =>
       s.id === id ? { ...s, [zKey]: { ...(s[zKey] || {}), [subfield]: value } } : s
     ));
@@ -1326,6 +1406,17 @@ export default function PneusTab({
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={() => setShowColdCalc(v => !v)}
+              title="Calcular pressão fria a partir da pressão ideal"
+              style={{
+                padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                background: showColdCalc ? `${COLORS.accent}18` : 'transparent',
+                border: `1px solid ${showColdCalc ? COLORS.accent : COLORS.border}`,
+                color: showColdCalc ? COLORS.accent : COLORS.textSecondary,
+              }}>
+              🧮 Calc. Fria
+            </button>
             <select
               value={tyres.compound || ''}
               onChange={e => { setTyres(prev => ({ ...prev, compound: e.target.value })); setSaved(false); }}
@@ -1401,6 +1492,156 @@ export default function PneusTab({
             </button>
           </div>
         </div>
+
+        {/* Calculadora de Pressão Fria (toggle) — Tier 3 (aprende do histórico) */}
+        {showColdCalc && (() => {
+          const compoundId = coldCalc.compoundId || tyres.compound || '';
+          const compoundEntry = compoundLibrary.find(c => c.id === compoundId);
+          const compoundType = compoundEntry?.composto || '';
+          // Tier 3: tenta aprender do histórico
+          const learned = learnDeltaPFromHistory({
+            tireSets: profileTireSets,
+            compoundId,
+            trackTempTargetC: coldCalc.tTrack,
+            position: coldCalc.position,
+          });
+          let result = null;
+          let mode = 'physics';
+          if (learned && coldCalc.pIdeal) {
+            // ΔP histórico subtraído da pressão ideal (já em pressão manométrica)
+            result = parseFloat(coldCalc.pIdeal) - learned.deltaP;
+            mode = 'history';
+          } else {
+            const tOp = estimateTOp({
+              tTrackC: coldCalc.tTrack,
+              compoundType,
+              position: coldCalc.position,
+            });
+            result = calcColdPSIPhysics({
+              pIdealPSI: coldCalc.pIdeal,
+              tAmbC: coldCalc.tAmb,
+              tOpC: tOp,
+              altitudeM: coldCalc.altitude,
+            });
+          }
+          const inputBase = {
+            background: COLORS.bg, color: COLORS.textPrimary,
+            border: `1px solid ${COLORS.border}`, borderRadius: 5,
+            padding: '6px 9px', fontSize: 12, outline: 'none', width: '100%',
+            boxSizing: 'border-box',
+          };
+          const labelStyle = { fontSize: 10, color: COLORS.textMuted, fontWeight: 600, marginBottom: 4, display: 'block', textTransform: 'uppercase', letterSpacing: '0.4px' };
+          return (
+            <div style={{
+              background: `${COLORS.accent}08`,
+              border: `1px solid ${COLORS.accent}44`,
+              borderRadius: 10,
+              padding: 14,
+              marginBottom: 16,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.accent }}>🧮 Calculadora de Pressão Fria</div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+                    {mode === 'history'
+                      ? `Aprendendo do histórico (${learned.n} sessões compatíveis) · ΔP médio observado`
+                      : 'Modelo físico (Lei de Gay-Lussac) — salve sessões para melhorar a precisão'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowColdCalc(false)}
+                  style={{ background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: 14 }}
+                  title="Fechar"
+                >✕</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelStyle}>Pressão Ideal (PSI)</label>
+                  <input type="number" step="0.1" placeholder="Ex: 29.5"
+                    value={coldCalc.pIdeal}
+                    onChange={e => setColdCalc(prev => ({ ...prev, pIdeal: e.target.value }))}
+                    style={inputBase} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Composto</label>
+                  <select
+                    value={compoundId}
+                    onChange={e => setColdCalc(prev => ({ ...prev, compoundId: e.target.value }))}
+                    style={{ ...inputBase, padding: '6px 8px' }}>
+                    <option value="">— usar atual ({tyres.compound ? (compoundLibrary.find(c=>c.id===tyres.compound)?.composto || '?') : 'nenhum'}) —</option>
+                    {compoundLibrary.map(c => (
+                      <option key={c.id} value={c.id}>{getCompoundDisplayName(c)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Posição</label>
+                  <select
+                    value={coldCalc.position}
+                    onChange={e => setColdCalc(prev => ({ ...prev, position: e.target.value }))}
+                    style={{ ...inputBase, padding: '6px 8px' }}>
+                    <option value="front">Dianteiro</option>
+                    <option value="rear">Traseiro</option>
+                    <option value="all">Média (4 cantos)</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Temp. Pista (°C)</label>
+                  <input type="number" step="1" placeholder="Ex: 35"
+                    value={coldCalc.tTrack}
+                    onChange={e => setColdCalc(prev => ({ ...prev, tTrack: e.target.value }))}
+                    style={inputBase} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Temp. Ambiente (°C)</label>
+                  <input type="number" step="1" placeholder="Ex: 25"
+                    value={coldCalc.tAmb}
+                    onChange={e => setColdCalc(prev => ({ ...prev, tAmb: e.target.value }))}
+                    style={inputBase} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Altitude (m) — opcional</label>
+                  <input type="number" step="10" placeholder="0"
+                    value={coldCalc.altitude}
+                    onChange={e => setColdCalc(prev => ({ ...prev, altitude: e.target.value }))}
+                    style={inputBase} />
+                </div>
+              </div>
+              <div style={{
+                marginTop: 12, padding: '10px 14px', borderRadius: 8,
+                background: result != null ? `${COLORS.green}15` : `${COLORS.border}22`,
+                border: `1px solid ${result != null ? COLORS.green + '55' : COLORS.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              }}>
+                <div>
+                  <div style={{ fontSize: 10, color: COLORS.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                    Pressão Fria Recomendada
+                    {mode === 'history' && (
+                      <span style={{ marginLeft: 8, color: COLORS.green, fontWeight: 700 }}>
+                        ⭐ {learned.n} sessão(ões) aprendida(s)
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: result != null ? COLORS.green : COLORS.textMuted, marginTop: 2 }}>
+                    {result != null ? `${result.toFixed(2)} PSI` : '—'}
+                    {result != null && coldCalc.pIdeal && (
+                      <span style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: 500, marginLeft: 8 }}>
+                        (Δ {(parseFloat(coldCalc.pIdeal) - result).toFixed(2)} PSI build-up)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, maxWidth: 280, lineHeight: 1.4 }}>
+                  {mode === 'history'
+                    ? 'Precisão alta — usando ΔP médio das sessões salvas com o mesmo composto e faixa de track temp (±10°C).'
+                    : 'Sem histórico suficiente para esse combo. Salve ≥2 sessões com Pf+Pq medidos para ativar aprendizado.'}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Grid de pressões — 4 colunas */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
@@ -2506,8 +2747,34 @@ export default function PneusTab({
                         </div>
                       </div>
 
-                      {/* Temperatura por zona */}
-                      <SectionLabel color={COLORS.textMuted}>Temperatura por Zona (°C) — Interno / Central / Externo</SectionLabel>
+                      {/* Temperatura por zona — SAÍDA (fria) */}
+                      <SectionLabel color={COLORS.textMuted}>Temperatura por Zona — Saída (°C) — Interno / Central / Externo</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                        {TYRE_POSITIONS.map((pos) => {
+                          const zKey = `z${pos.key.charAt(0).toUpperCase()}${pos.key.slice(1)}Cold`;
+                          const zone = stint[zKey] || { inner: '', center: '', outer: '' };
+                          return (
+                            <div key={pos.key}>
+                              <label style={{ fontSize: 12, color: COLORS.blue, fontWeight: 700, display: 'block', marginBottom: 5 }}>{pos.label}</label>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+                                {[['inner', 'Int'], ['center', 'Cen'], ['outer', 'Ext']].map(([zk, zlabel]) => (
+                                  <div key={zk}>
+                                    <label style={{ fontSize: 9, color: COLORS.textMuted, display: 'block', marginBottom: 2, textTransform: 'uppercase' }}>
+                                      {zlabel}
+                                    </label>
+                                    <input type="number" step="1" value={zone[zk] || ''}
+                                      onChange={(e) => updateStintZone(stint.id, pos.key, zk, e.target.value, true)}
+                                      placeholder="°C" style={{ ...INPUT_STYLE, padding: '4px 6px', fontSize: 11 }} />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Temperatura por zona — VOLTA (quente) */}
+                      <SectionLabel color={COLORS.textMuted}>Temperatura por Zona — Volta (°C) — Interno / Central / Externo</SectionLabel>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
                         {TYRE_POSITIONS.map((pos) => {
                           const zKey = `z${pos.key.charAt(0).toUpperCase()}${pos.key.slice(1)}`;

@@ -23,14 +23,24 @@ function detectSeparator(headerLine) {
 
 /**
  * Converte valor string para número, lidando com decimal BR (vírgula).
+ * @param {string} raw
+ * @param {string} sep - separador de COLUNA detectado/forçado
+ * @param {string} [decimalMode] - 'auto'|'.'|',' override do separador decimal
  */
-function parseNumber(raw, sep) {
+function parseNumber(raw, sep, decimalMode = 'auto') {
   if (!raw || raw.trim() === '') return NaN;
   let str = raw.trim();
 
-  // Se o separador é ; então a vírgula é decimal
-  if (sep === ';') {
+  if (decimalMode === ',') {
+    // Decimal explícito = vírgula → troca vírgula por ponto
     str = str.replace(',', '.');
+  } else if (decimalMode === '.') {
+    // Decimal explícito = ponto → não mexe (vírgula seria separador de milhar)
+    // remove eventuais vírgulas de milhar
+    str = str.replace(/,/g, '');
+  } else {
+    // auto: se o separador de coluna é ; a vírgula é decimal (padrão BR/ProTune)
+    if (sep === ';') str = str.replace(',', '.');
   }
 
   return parseFloat(str);
@@ -86,16 +96,28 @@ function detectLapColumn(headers) {
  * Faz o parsing completo do CSV de telemetria.
  *
  * @param {string} text - Conteúdo bruto do arquivo CSV.
+ * @param {Object} [opts] - Overrides opcionais (import_config do cliente):
+ *   colSep:    'auto'|';'|','|'\t'  — força o separador de coluna
+ *   decimal:   'auto'|'.'|','       — força o separador decimal
+ *   skipLines: number               — pula N linhas iniciais (metadados)
+ * Sem opts, comporta-se exatamente como antes (auto-detecção).
  * @returns {{ headers: string[], rows: Object[], laps: Object, lapCol: string }}
  */
-export function parseCSV(text) {
-  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim());
+export function parseCSV(text, opts = {}) {
+  let lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim());
+
+  // Override: pular N linhas iniciais (metadados de MoTeC/AiM/Bosch)
+  const skip = Number.isInteger(opts.skipLines) ? opts.skipLines : 0;
+  if (skip > 0) lines = lines.slice(skip);
 
   if (lines.length < 2) {
     return { headers: [], rows: [], laps: {}, lapCol: '' };
   }
 
-  const sep = detectSeparator(lines[0]);
+  // Override de separador de coluna, ou auto-detecção
+  const sep = (opts.colSep && opts.colSep !== 'auto')
+    ? opts.colSep
+    : detectSeparator(lines[0]);
 
   // Desduplicar headers: se dois canais têm o mesmo nome, o 2º vira "Nome_2", o 3º "Nome_3", etc.
   // Evita overwrite silencioso de dados quando a ECU exporta a mesma coluna duas vezes.
@@ -112,10 +134,11 @@ export function parseCSV(text) {
     const vals = lines[i].split(sep);
     if (vals.length < headers.length - 2) continue;
 
+    const decimalMode = opts.decimal || 'auto';
     const row = {};
     headers.forEach((h, j) => {
       const raw = (vals[j] || '').trim();
-      const num = parseNumber(raw, sep);
+      const num = parseNumber(raw, sep, decimalMode);
       row[h] = isNaN(num) ? raw : num;
     });
 

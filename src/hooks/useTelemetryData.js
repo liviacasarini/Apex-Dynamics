@@ -15,9 +15,38 @@ import { detectChannels } from '@/core/channelDetector';
 import { analyzeAllLaps } from '@/core/lapAnalyzer';
 import { generateDriverFeedback } from '@/core/feedbackGenerator';
 import { routeFile } from '@/core/fileRouter';
+import { getChannelOverrides, getFormatOptions, getUnitConverter } from '@/license/importConfig';
+import { CHART_METRICS, CHART_METRICS_TRUCK } from '@/constants/channels';
 
 /** Mapa extensão → parser para fallback ao carregar sessões antigas. */
 const FALLBACK_PARSERS = { dlf: parseDLF, log: parseBoschLog, tdl: parseTDL };
+
+/** Unidade interna esperada por cada canal (para conversão de origem). */
+const INTERNAL_UNITS = {};
+[...CHART_METRICS, ...CHART_METRICS_TRUCK].forEach((m) => {
+  if (m.unit) INTERNAL_UNITS[m.key] = m.unit;
+});
+
+/**
+ * Aplica conversão de unidades nos valores, quando o cliente configurou uma
+ * unidade de origem (ex.: velocidade em mph → km/h). Modifica rows in-place.
+ * Sem overrides ou sem unidade configurada, não faz nada.
+ */
+function applyUnitConversions(rows, channels, overrides) {
+  if (!overrides) return;
+  for (const [key, ov] of Object.entries(overrides)) {
+    const header = channels[key];
+    const fromUnit = ov?.unit;
+    const toUnit = INTERNAL_UNITS[key];
+    if (!header || !fromUnit || !toUnit) continue;
+    const convert = getUnitConverter(fromUnit, toUnit);
+    if (!convert) continue;
+    for (const r of rows) {
+      const v = r[header];
+      if (typeof v === 'number' && !isNaN(v)) r[header] = convert(v);
+    }
+  }
+}
 
 /**
  * Quando nenhum canal de aceleração G está disponível (sem IMU/acelerômetro),
@@ -64,7 +93,12 @@ function buildSession(parsed, fileName) {
     );
   }
 
-  const channels = detectChannels(parsed.headers, parsed.units || []);
+  // Override de canais do cliente (import_config), se houver
+  const channelOverrides = getChannelOverrides();
+  const channels = detectChannels(parsed.headers, parsed.units || [], channelOverrides);
+
+  // Conversão de unidades de origem → unidade interna do app (se configurado)
+  applyUnitConversions(parsed.rows, channels, channelOverrides);
 
   // Se não tem sensor G direto, deriva de velocidade GPS
   addDerivedAccelChannel(parsed.rows, channels);
@@ -82,7 +116,7 @@ function buildSession(parsed, fileName) {
  * Usado internamente para loadFromText.
  */
 function processFile(file, text) {
-  const parsed = parseCSV(text);
+  const parsed = parseCSV(text, getFormatOptions());
   return buildSession(parsed, file.name);
 }
 

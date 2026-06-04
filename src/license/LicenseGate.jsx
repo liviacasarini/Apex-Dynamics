@@ -13,8 +13,15 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/context/ThemeContext';
+import { setEntitlements, parseCertEntitlements } from '@/license/entitlements';
+import { setImportConfig, parseCertImportConfig } from '@/license/importConfig';
+import { APEX_LEGAL } from '@/license/legalText';
 
 const SESSION_KEY = 'rt_session';
+
+/* Contato de suporte exibido quando a conta está bloqueada. */
+const SUPPORT_PHONE    = '(11) 99301-9308';
+const SUPPORT_WHATSAPP = 'https://wa.me/5511993019308';
 
 /* ─── Estilos ────────────────────────────────────────────────────────── */
 
@@ -70,6 +77,30 @@ const styles = {
     lineHeight: 1.5, fontFamily: FONT,
   }),
   info: { marginTop: 20, fontSize: 12, color: '#55556a', lineHeight: 1.6, fontFamily: FONT },
+  blockBox: {
+    padding: '18px 18px', borderRadius: 12, marginBottom: 16, textAlign: 'left',
+    background: 'rgba(230,57,70,0.07)', border: '1px solid rgba(230,57,70,0.28)',
+    fontFamily: FONT,
+  },
+  blockTitle: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    fontSize: 15, fontWeight: 700, color: '#e63946', marginBottom: 8, fontFamily: FONT,
+  },
+  blockText: { fontSize: 13, color: '#c9c9d6', lineHeight: 1.6, marginBottom: 14, fontFamily: FONT },
+  contactRow: {
+    display: 'flex', flexDirection: 'column', gap: 6,
+    paddingTop: 12, borderTop: '1px solid rgba(230,57,70,0.18)',
+  },
+  contactLabel: {
+    fontSize: 11, fontWeight: 600, color: '#8888a0',
+    textTransform: 'uppercase', letterSpacing: '0.6px', fontFamily: FONT,
+  },
+  contactBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    padding: '10px 14px', background: '#25D366', border: 'none', borderRadius: 8,
+    color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+    textDecoration: 'none', fontFamily: FONT, transition: 'opacity 0.2s',
+  },
   loading: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f',
@@ -149,6 +180,35 @@ function checkAndNotifyCertExpiry(payload) {
   }
 }
 
+/**
+ * Classifica o motivo de um bloqueio de conta a partir da resposta do servidor.
+ * Retorna { title, text } para exibir a tela de contato, ou null se não for
+ * um bloqueio que exija contato (ex.: senha errada, offline, rate-limit).
+ */
+function classifyBlock(result) {
+  const msg = (result?.message || '').toLowerCase();
+
+  if (result?.expired || msg.includes('expirad') || msg.includes('assinatura') || msg.includes('venceu') || msg.includes('vencid')) {
+    return {
+      title: 'Assinatura expirada',
+      text: 'Seu plano de acesso ao ApexDynamics venceu. Para reativar sua conta e voltar a usar o aplicativo, entre em contato com o administrador pelo número abaixo.',
+    };
+  }
+  if (result?.banned || msg.includes('banid')) {
+    return {
+      title: 'Conta bloqueada',
+      text: 'Sua conta foi bloqueada pelo administrador. Se você acredita que isso é um engano, entre em contato pelo número abaixo para esclarecer.',
+    };
+  }
+  if (result?.suspended || msg.includes('suspens') || msg.includes('inativ')) {
+    return {
+      title: 'Conta suspensa',
+      text: 'Sua conta está temporariamente suspensa. Para regularizar a situação e reativar o acesso, entre em contato pelo número abaixo.',
+    };
+  }
+  return null;
+}
+
 function saveSession(data) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(data));
 }
@@ -170,6 +230,12 @@ export default function LicenseGate({ children }) {
   const { isDark, toggleTheme } = useTheme();
 
   const [status,    setStatus]    = useState('checking'); // checking | login | valid | renewing
+  const [block,     setBlock]     = useState(null); // { title, text } quando a conta está bloqueada
+  const [legal,     setLegal]     = useState(null); // 'terms' | 'privacy' | null
+  // entKey: incrementado quando entitlements mudam em tempo real via SSE.
+  // Passado como `key` pro wrapper dos filhos → força remontagem do TabGate
+  // que então relê os entitlements corretos do localStorage.
+  const [entKey,    setEntKey]    = useState(0);
   const [username,  setUsername]  = useState('');
   const [password,  setPassword]  = useState('');
   const [message,   setMessage]   = useState('');
@@ -193,8 +259,35 @@ export default function LicenseGate({ children }) {
       const check = await window.electronAPI.checkCertificate(session.certificate);
 
       if (check.valid && !check.expired) {
-        // Certificado válido → acesso liberado
-        // Verifica se está próximo de expirar e notifica via OS
+        // Certificado válido localmente — mas verifica online se os entitlements
+        // Retoma sessão no processo principal (define token + hwid + inicia SSE).
+        // Necessário porque ao abrir com cert válido o login é ignorado.
+        if (session.token && check.payload?.hwid) {
+          window.electronAPI.resumeSession(session.token, check.payload.hwid).catch(() => {});
+        }
+
+        // Verifica online se abas OU import_config mudaram desde a emissão do cert.
+        // Passa o token explicitamente pois sessionToken no main pode ainda ser null.
+        const certEv  = check.payload?.ev ?? -1;
+        const certIcv = check.payload?.icv ?? -1;
+        const statusRes = await window.electronAPI
+          .checkCertStatus(certEv, session.token, certIcv).catch(() => null);
+
+        if (statusRes?.success && statusRes.changed && session.token) {
+          // Entitlements mudaram — busca novo certificado com as abas atualizadas
+          const renewal = await window.electronAPI.requestCertificate(session.token);
+          if (renewal.success && renewal.certificate) {
+            saveSession({ ...session, certificate: renewal.certificate });
+            setEntitlements(parseCertEntitlements(renewal.certificate));
+            setImportConfig(parseCertImportConfig(renewal.certificate));
+            checkAndNotifyCertExpiry(check.payload);
+            setStatus('valid');
+            return;
+          }
+        }
+        // Sem mudança (ou offline) — usa o certificado atual
+        setEntitlements(check.payload?.ent || []);
+        setImportConfig(check.payload?.ic || null);
         checkAndNotifyCertExpiry(check.payload);
         setStatus('valid');
         return;
@@ -215,6 +308,8 @@ export default function LicenseGate({ children }) {
 
         if (renewal.success && renewal.certificate) {
           saveSession({ ...session, certificate: renewal.certificate });
+          setEntitlements(parseCertEntitlements(renewal.certificate));
+          setImportConfig(parseCertImportConfig(renewal.certificate));
           setStatus('valid');
           return;
         }
@@ -228,11 +323,12 @@ export default function LicenseGate({ children }) {
           return;
         }
 
-        if (renewal.banned) {
+        // Bloqueio que exige contato (banido, suspenso ou assinatura expirada)
+        const renewBlock = classifyBlock(renewal);
+        if (renewBlock) {
           clearSession();
+          setBlock(renewBlock);
           setStatus('login');
-          setMessage('Conta banida ou inativa. Entre em contato com o suporte.');
-          setIsError(true);
           return;
         }
 
@@ -249,12 +345,30 @@ export default function LicenseGate({ children }) {
       setStatus('login');
     }
 
-    // Registra listener para ban em tempo real
-    window.electronAPI?.onForcedLogout?.(() => {
+    // Registra listener para mudança de abas em tempo real (via SSE)
+    // O main.cjs já renovou o certificado; salva e força remontagem do TabGate.
+    window.electronAPI?.onEntitlementsChanged?.((data) => {
+      if (data?.certificate) {
+        const currentSession = loadSession();
+        if (currentSession) {
+          saveSession({ ...currentSession, certificate: data.certificate });
+          setEntitlements(parseCertEntitlements(data.certificate));
+          setImportConfig(parseCertImportConfig(data.certificate));
+          // Incrementar entKey força remontagem do TabGate →
+          // ele relê os entitlements corretos do localStorage imediatamente.
+          setEntKey(k => k + 1);
+          console.log('[LicenseGate] entitlements atualizados via SSE');
+        }
+      }
+    });
+
+    // Registra listener para ban em tempo real (via SSE)
+    window.electronAPI?.onForcedLogout?.((data) => {
       clearSession();
+      const blk = classifyBlock({ banned: true, ...(data || {}) })
+        || { title: 'Conta bloqueada', text: 'Seu acesso foi encerrado pelo administrador. Entre em contato pelo número abaixo.' };
+      setBlock(blk);
       setStatus('login');
-      setMessage('Sua conta foi banida. Entre em contato com o suporte.');
-      setIsError(true);
     });
 
     checkSession();
@@ -270,6 +384,7 @@ export default function LicenseGate({ children }) {
 
     setLogging(true);
     setMessage('');
+    setBlock(null);
 
     try {
       const result = await window.electronAPI.login(user, pass);
@@ -284,15 +399,22 @@ export default function LicenseGate({ children }) {
           email:       result.email    || null,
           role:        result.role     || 'user',
         });
+        setEntitlements(parseCertEntitlements(result.certificate));
+        setImportConfig(parseCertImportConfig(result.certificate));
         setMessage('');
         setStatus('valid');
         return;
       }
 
-      // Erros do servidor
-      if (result.banned) {
-        setMessage('Esta máquina foi banida. Entre em contato com o suporte.');
-      } else if (result.locked) {
+      // Bloqueios que exigem contato (banido, suspenso, assinatura expirada)
+      const blk = classifyBlock(result);
+      if (blk) {
+        setBlock(blk);
+        return;
+      }
+
+      // Erros comuns / recuperáveis
+      if (result.locked) {
         setMessage('Acesso bloqueado por excesso de tentativas. Tente novamente em 30 minutos.');
       } else if (result.offline) {
         setMessage('Sem conexão com o servidor. Verifique sua internet.');
@@ -370,7 +492,53 @@ export default function LicenseGate({ children }) {
   }
 
   /* ── Render: app liberado ─────────────────────────────────────────── */
-  if (status === 'valid') return children;
+  // entKey como key força remontagem do TabGate quando entitlements mudam via SSE
+  if (status === 'valid') return <div key={entKey} style={{ display: 'contents' }}>{children}</div>;
+
+  /* ── Render: conta bloqueada (banido / suspenso / assinatura vencida) ── */
+  if (block) {
+    return (
+      <div style={dynStyles.container}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        {toggleBtn}
+        <div style={dynStyles.card}>
+          <div style={styles.logoWrap}>
+            <img src={isDark ? './apex-logo.png' : './apex-logo-light.png'} alt="Apex Dynamics"
+                 style={{ width: '80%', maxWidth: 300, height: 'auto', objectFit: 'contain' }} />
+          </div>
+          <div style={styles.divider} />
+
+          <div style={styles.blockBox}>
+            <div style={styles.blockTitle}>
+              <span style={{ fontSize: 18 }}>⛔</span> {block.title}
+            </div>
+            <div style={styles.blockText}>{block.text}</div>
+
+            <div style={styles.contactRow}>
+              <span style={styles.contactLabel}>Fale com o administrador</span>
+              <a href={SUPPORT_WHATSAPP} target="_blank" rel="noreferrer"
+                 style={styles.contactBtn}
+                 onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
+                 onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.82 11.82 0 0 1 8.413 3.488 11.82 11.82 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884a9.86 9.86 0 0 0 1.519 5.276l-.999 3.648 3.469-.823z"/>
+                </svg>
+                {SUPPORT_PHONE}
+              </a>
+            </div>
+          </div>
+
+          <button
+            onClick={() => { setBlock(null); setMessage(''); setIsError(false); }}
+            style={{ ...styles.button, background: 'transparent', color: isDark ? '#8888a0' : '#666677',
+                     border: isDark ? '1px solid #1e1e2e' : '1px solid #d0d0dc' }}
+          >
+            Voltar ao login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   /* ── Render: formulário de login ─────────────────────────────────── */
   return (
@@ -446,7 +614,64 @@ export default function LicenseGate({ children }) {
         <div style={dynStyles.info}>
           Licença válida por 7 dias · Renovação automática ao abrir o app
         </div>
+        <div style={{ ...dynStyles.info, marginTop: 8, fontSize: 11 }}>
+          <span
+            onClick={() => setLegal('terms')}
+            style={{ color: '#e63946', cursor: 'pointer', fontWeight: 600 }}
+          >Termos de Uso</span>
+          {' · '}
+          <span
+            onClick={() => setLegal('privacy')}
+            style={{ color: '#e63946', cursor: 'pointer', fontWeight: 600 }}
+          >Política de Privacidade</span>
+        </div>
       </div>
+
+      {legal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setLegal(null); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9000,
+            background: 'rgba(0,0,0,0.62)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 28,
+          }}
+        >
+          <div style={{
+            background: isDark ? '#12141c' : '#ffffff',
+            border: `1px solid ${isDark ? '#232633' : '#e0e0e8'}`,
+            borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '82vh',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.55)', fontFamily: FONT,
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '16px 20px', borderBottom: `1px solid ${isDark ? '#232633' : '#e8e8f0'}`,
+            }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: isDark ? '#f0f0f5' : '#111' }}>
+                {legal === 'terms' ? 'Termos de Uso' : 'Política de Privacidade'}
+              </h3>
+              <button onClick={() => setLegal(null)} style={{
+                background: 'none', border: 'none', color: '#8c8ca2',
+                fontSize: 24, lineHeight: 1, cursor: 'pointer', padding: '0 4px',
+              }}>×</button>
+            </div>
+            <div style={{
+              padding: '18px 20px', overflowY: 'auto', whiteSpace: 'pre-wrap',
+              fontSize: 12.5, lineHeight: 1.65, color: isDark ? '#c3c8d4' : '#33333a',
+            }}>
+              {legal === 'terms' ? APEX_LEGAL.termos : APEX_LEGAL.privacidade}
+            </div>
+            <div style={{
+              padding: '14px 20px', borderTop: `1px solid ${isDark ? '#232633' : '#e8e8f0'}`,
+              display: 'flex', justifyContent: 'flex-end',
+            }}>
+              <button onClick={() => setLegal(null)} style={{
+                ...styles.button, width: 'auto', padding: '9px 26px', marginTop: 0, marginBottom: 0,
+              }}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

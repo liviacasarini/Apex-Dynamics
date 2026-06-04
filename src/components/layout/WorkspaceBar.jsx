@@ -62,7 +62,8 @@ export default function WorkspaceBar({
     return () => document.removeEventListener('mousedown', handler);
   }, [gearOpen]);
 
-  // Close create input on outside click
+  // Close create input on outside click (use click, not mousedown,
+  // to avoid stealing focus/keystrokes from the input)
   useEffect(() => {
     if (!creating) return;
     const handler = (e) => {
@@ -71,8 +72,8 @@ export default function WorkspaceBar({
         setCreateVal('');
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
   }, [creating]);
 
   const openGear = () => {
@@ -167,6 +168,39 @@ export default function WorkspaceBar({
                 />
               )}
               {w.vehicleType === 'truck' ? '🚛 ' : w.vehicleType === 'moto' ? '🏍️ ' : ''}{w.name}
+              {workspaces.length > 1 && (
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Deletar workspace "${w.name}"? Esta ação não pode ser desfeita.`)) {
+                      onDelete(w.id);
+                    }
+                  }}
+                  title="Deletar workspace"
+                  style={{
+                    marginLeft: 8,
+                    padding: '0 5px',
+                    borderRadius: 3,
+                    color: COLORS.textMuted,
+                    fontSize: 12,
+                    lineHeight: 1,
+                    opacity: active ? 0.7 : 0.4,
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = COLORS.accent;
+                    e.currentTarget.style.background = `${COLORS.accent}22`;
+                    e.currentTarget.style.opacity = 1;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = COLORS.textMuted;
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.opacity = active ? 0.7 : 0.4;
+                  }}
+                >
+                  ✕
+                </span>
+              )}
             </div>
           );
         })}

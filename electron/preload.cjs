@@ -49,6 +49,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('license:requestCertificate', { token }),
 
   /**
+   * Verifica junto ao servidor se o ev (entitlements_version) do certificado local
+   * ainda é igual ao do banco. Se mudou, o app deve renovar o certificado.
+   */
+  checkCertStatus: (ev, token, icv) =>
+    ipcRenderer.invoke('license:checkCertStatus', { ev, token, icv }),
+
+  resumeSession: (token, hwid) =>
+    ipcRenderer.invoke('license:resumeSession', { token, hwid }),
+
+  /**
+   * Registra callback para ser chamado quando o servidor notificar mudança de abas
+   * via SSE (entitlements_changed). O app renova o cert e recarrega as abas.
+   */
+  onEntitlementsChanged: (callback) => {
+    ipcRenderer.removeAllListeners('license:entitlementsChanged');
+    ipcRenderer.on('license:entitlementsChanged', (_event, data) => callback(data));
+    return () => ipcRenderer.removeAllListeners('license:entitlementsChanged');
+  },
+
+  /**
    * Valida o APEX hash + HWID contra o ApexServer (mantido para compatibilidade).
    */
   validateApexHash: (apexHash, hwid) =>
@@ -128,4 +148,18 @@ contextBridge.exposeInMainWorld('teamAPI', {
 
   /** Remove listener de eventos */
   offEvent: () => ipcRenderer.removeAllListeners('team:event'),
+});
+
+/* ── Cloud Team API (Oracle Cloud) ──────────────────────────────── */
+contextBridge.exposeInMainWorld('cloudTeamAPI', {
+  getMembers:        ()           => ipcRenderer.invoke('cloud:getMembers'),
+  getCars:           ()           => ipcRenderer.invoke('cloud:getCars'),
+  getMessages:       ()           => ipcRenderer.invoke('cloud:getMessages'),
+  sendMessage:       (content)    => ipcRenderer.invoke('cloud:sendMessage', { content }),
+  triggerEmergency:  (reason)     => ipcRenderer.invoke('cloud:triggerEmergency', { reason }),
+  getActiveSession:  ()           => ipcRenderer.invoke('cloud:getActiveSession'),
+  startSession:      (name)       => ipcRenderer.invoke('cloud:startSession', { name }),
+  endSession:        (id)         => ipcRenderer.invoke('cloud:endSession', { id }),
+  getLatestCarData:  ()           => ipcRenderer.invoke('cloud:getLatestCarData'),
+  getLatestTrackCond:()           => ipcRenderer.invoke('cloud:getLatestTrackCond'),
 });

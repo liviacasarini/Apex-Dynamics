@@ -207,6 +207,7 @@ function detectByUnits(headers, units, found) {
  * Tenta encontrar cada canal interno nos headers do arquivo.
  *
  * Estratégias em ordem de prioridade:
+ *  0. Override do cliente (import_config) — match EXATO do header configurado
  *  1. Match exato com CHANNEL_MAP
  *  2. Match parcial case-insensitive (contains)
  *  3. Match por regex dos CHANNEL_ALIASES
@@ -214,12 +215,30 @@ function detectByUnits(headers, units, found) {
  *
  * @param {string[]} headers - Headers do arquivo importado.
  * @param {string[]} [units] - Unidades paralelas (opcional; vem do DLF).
+ * @param {Object} [overrides] - Mapa { chaveInterna: { header, unit } } do
+ *   import_config do cliente. Tem prioridade sobre a auto-detecção. Opcional —
+ *   sem ele, o comportamento é idêntico ao de sempre.
  * @returns {Object} Mapa de chave interna → nome real do header.
  */
-export function detectChannels(headers, units = []) {
+export function detectChannels(headers, units = [], overrides = {}) {
   const found = {};
 
+  // Estratégia 0: overrides explícitos do cliente (prioridade máxima).
+  // Casa o header configurado contra os headers reais do arquivo, primeiro
+  // por igualdade exata, depois case-insensitive (tolerância a espaços/caixa).
+  if (overrides && typeof overrides === 'object') {
+    for (const [key, ov] of Object.entries(overrides)) {
+      const target = ov?.header;
+      if (!target) continue;
+      const exact = headers.find((h) => h === target);
+      if (exact) { found[key] = exact; continue; }
+      const ci = headers.find((h) => h.toLowerCase().trim() === target.toLowerCase().trim());
+      if (ci) found[key] = ci;
+    }
+  }
+
   for (const [key, name] of Object.entries(CHANNEL_MAP)) {
+    if (found[key]) continue;  // já resolvido por override
     // 1. Exact match
     const exact = headers.find((h) => h === name);
     if (exact) { found[key] = exact; continue; }
