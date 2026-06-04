@@ -332,6 +332,15 @@ BwIDAQAB
 /** Em dev (não empacotado), carrega localhost; em produção, carrega o build */
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
+// Em produção, silencia logs informativos do processo principal (mantém warn/error
+// para diagnóstico). Evita poluição e vazamento de detalhes internos.
+if (!isDev) {
+  const noop = () => {};
+  console.log = noop;
+  console.info = noop;
+  console.debug = noop;
+}
+
 /* ── Helper: HTTPS POST genérico ──────────────────────────────────── */
 
 /**

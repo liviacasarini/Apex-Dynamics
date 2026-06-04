@@ -1,6 +1,6 @@
 {
   "name": "race-telemetry-analyzer",
-  "version": "1.1.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "deploy": "node scripts/deploy.cjs",
     "build:dir": "npm run build:vite && electron-builder --win --dir && start release\\win-unpacked\\ApexDynamics.exe",
     "build:win": "npm run build:vite && electron-builder --win",
+    "build:win:secure": "cross-env NODE_ENV=production node scripts/build-secure.cjs",
     "build:mac": "npm run build:vite && electron-builder --mac",
     "release:win": "npm run build:vite && electron-builder --win --publish always"
   },
@@ -34,6 +35,7 @@
     "cross-env": "^7.0.3",
     "electron": "^40.8.0",
     "electron-builder": "^25.1.8",
+    "javascript-obfuscator": "^4.2.2",
     "sharp": "^0.34.5",
     "terser": "^5.31.0",
     "vite": "^5.4.0"
@@ -85,7 +87,7 @@
     "publish": {
       "provider": "github",
       "owner": "liviacasarini",
-      "repo": "Apex-Dynamics",
+      "repo": "ApexDynamics-Releases",
       "releaseType": "release"
     }
   }
