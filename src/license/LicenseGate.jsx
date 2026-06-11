@@ -23,117 +23,61 @@ const SESSION_KEY = 'rt_session';
 const SUPPORT_PHONE    = '(11) 99301-9308';
 const SUPPORT_WHATSAPP = 'https://wa.me/5511993019308';
 
-/* ─── Estilos ────────────────────────────────────────────────────────── */
-
 const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-
-const styles = {
-  container: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    minHeight: '100vh', background: '#0a0a0f', padding: 24, fontFamily: FONT,
-  },
-  card: {
-    background: 'linear-gradient(180deg, #111118 0%, #12121a 100%)',
-    border: '1px solid #1e1e2e', borderRadius: 16,
-    padding: '40px 40px 32px', maxWidth: 420, width: '100%',
-    textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-  },
-  logoWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 20 },
-  title:    { fontSize: 19, fontWeight: 700, color: '#f0f0f5', marginBottom: 6, fontFamily: FONT },
-  subtitle: { fontSize: 13, color: '#8888a0', marginBottom: 28, lineHeight: 1.6, fontFamily: FONT },
-  formGroup: { textAlign: 'left', marginBottom: 14 },
-  label: {
-    display: 'block', fontSize: 11, fontWeight: 600, color: '#8888a0',
-    textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 5, fontFamily: FONT,
-  },
-  input: {
-    width: '100%', padding: '10px 14px', background: '#0f0f1a',
-    border: '1px solid #1e1e2e', borderRadius: 8, color: '#f0f0f5',
-    fontSize: 14, fontFamily: FONT, outline: 'none',
-    transition: 'border-color 0.2s, box-shadow 0.2s', boxSizing: 'border-box',
-  },
-  inputFocus: { borderColor: '#e63946', boxShadow: '0 0 0 2px rgba(230,57,70,0.12)' },
-  inputWrap:  { position: 'relative', display: 'flex', alignItems: 'center' },
-  eyeBtn: {
-    position: 'absolute', right: 0, top: 0, bottom: 0, width: 38,
-    background: 'transparent', border: 'none', color: '#55556a',
-    cursor: 'pointer', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', fontSize: 14, borderRadius: '0 8px 8px 0',
-  },
-  button: {
-    width: '100%', padding: '11px', background: '#e63946', border: 'none',
-    borderRadius: 8, color: '#fff', fontSize: 14, fontWeight: 600,
-    cursor: 'pointer', marginTop: 8, marginBottom: 4,
-    transition: 'background 0.2s, opacity 0.2s', fontFamily: FONT,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  buttonDisabled: { opacity: 0.45, cursor: 'not-allowed' },
-  message: (isError) => ({
-    padding: '10px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-    marginBottom: 12, textAlign: 'left',
-    background: isError ? 'rgba(230,57,70,0.08)' : 'rgba(6,214,160,0.08)',
-    color: isError ? '#e63946' : '#06d6a0',
-    border: `1px solid ${isError ? 'rgba(230,57,70,0.25)' : 'rgba(6,214,160,0.25)'}`,
-    lineHeight: 1.5, fontFamily: FONT,
-  }),
-  info: { marginTop: 20, fontSize: 12, color: '#55556a', lineHeight: 1.6, fontFamily: FONT },
-  blockBox: {
-    padding: '18px 18px', borderRadius: 12, marginBottom: 16, textAlign: 'left',
-    background: 'rgba(230,57,70,0.07)', border: '1px solid rgba(230,57,70,0.28)',
-    fontFamily: FONT,
-  },
-  blockTitle: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    fontSize: 15, fontWeight: 700, color: '#e63946', marginBottom: 8, fontFamily: FONT,
-  },
-  blockText: { fontSize: 13, color: '#c9c9d6', lineHeight: 1.6, marginBottom: 14, fontFamily: FONT },
-  contactRow: {
-    display: 'flex', flexDirection: 'column', gap: 6,
-    paddingTop: 12, borderTop: '1px solid rgba(230,57,70,0.18)',
-  },
-  contactLabel: {
-    fontSize: 11, fontWeight: 600, color: '#8888a0',
-    textTransform: 'uppercase', letterSpacing: '0.6px', fontFamily: FONT,
-  },
-  contactBtn: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: '10px 14px', background: '#25D366', border: 'none', borderRadius: 8,
-    color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-    textDecoration: 'none', fontFamily: FONT, transition: 'opacity 0.2s',
-  },
-  loading: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', minHeight: '100vh', background: '#0a0a0f',
-    gap: 14, fontFamily: FONT,
-  },
-  loadingText: { color: '#8888a0', fontSize: 13, fontFamily: FONT },
-  spinner: {
-    width: 28, height: 28, border: '2.5px solid #1e1e2e',
-    borderTop: '2.5px solid #e63946', borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  divider: {
-    width: 40, height: 2,
-    background: 'linear-gradient(90deg, transparent, #e63946, transparent)',
-    borderRadius: 2, margin: '0 auto 20px',
-  },
-};
 
 /* ─── SVG Icons ────────────────────────────────────────────────────── */
 
 function EyeIcon({ open }) {
   return open ? (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
       <line x1="1" y1="1" x2="23" y2="23"/>
     </svg>
   ) : (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
       <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12"/>
+      <polyline points="12 5 19 12 12 19"/>
+    </svg>
+  );
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.82 11.82 0 0 1 8.413 3.488 11.82 11.82 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884a9.86 9.86 0 0 0 1.519 5.276l-.999 3.648 3.469-.823z"/>
     </svg>
   );
 }
@@ -144,21 +88,19 @@ function EyeIcon({ open }) {
  * Verifica expiração do certificado RS256 e dispara notificação OS
  * se o app estiver dentro da janela de aviso (< 25h ou < 2.5h antes).
  * Chamado uma vez por abertura do app — evita spam ao usar debounce via
- * localStorage com chave baseada no `exp` do certificado.
+ * sessionStorage com chave baseada no `exp` do certificado.
  */
 function checkAndNotifyCertExpiry(payload) {
   if (!payload?.exp || !window.electronAPI?.showNotification) return;
 
   const DEBOUNCE_KEY = `notif_sent_${payload.exp}`;
-  const alreadySent  = sessionStorage.getItem(DEBOUNCE_KEY);
-  if (alreadySent) return;
+  if (sessionStorage.getItem(DEBOUNCE_KEY)) return;
 
   const nowSec    = Math.floor(Date.now() / 1000);
   const secLeft   = payload.exp - nowSec;
   const hoursLeft = secLeft / 3600;
 
   if (secLeft <= 0) {
-    // Já expirado (caso raro — normalmente o renew teria ocorrido)
     window.electronAPI.showNotification(
       '⛔ Licença Expirada — ApexDynamics',
       'Sua licença expirou. Faça login novamente para renovar o acesso.'
@@ -209,44 +151,37 @@ function classifyBlock(result) {
   return null;
 }
 
-function saveSession(data) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-}
+function saveSession(data) { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); }
+function loadSession()     { try { const r = localStorage.getItem(SESSION_KEY); return r ? JSON.parse(r) : null; } catch { return null; } }
+function clearSession()    { localStorage.removeItem(SESSION_KEY); }
 
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
-
-/* ─── Componente ─────────────────────────────────────────────────────── */
+/* ─── Componente Principal ───────────────────────────────────────────── */
 
 export default function LicenseGate({ children }) {
   const { isDark, toggleTheme } = useTheme();
 
-  const [status,    setStatus]    = useState('checking'); // checking | login | valid | renewing
-  const [block,     setBlock]     = useState(null); // { title, text } quando a conta está bloqueada
-  const [legal,     setLegal]     = useState(null); // 'terms' | 'privacy' | null
+  const [status,     setStatus]     = useState('checking'); // checking | login | valid | renewing
+  const [block,      setBlock]      = useState(null); // { title, text } quando a conta está bloqueada
+  const [legal,      setLegal]      = useState(null); // 'terms' | 'privacy' | null
   // entKey: incrementado quando entitlements mudam em tempo real via SSE.
   // Passado como `key` pro wrapper dos filhos → força remontagem do TabGate
   // que então relê os entitlements corretos do localStorage.
-  const [entKey,    setEntKey]    = useState(0);
-  const [username,  setUsername]  = useState('');
-  const [password,  setPassword]  = useState('');
-  const [message,   setMessage]   = useState('');
-  const [isError,   setIsError]   = useState(false);
-  const [logging,   setLogging]   = useState(false);
-  const [showPass,  setShowPass]  = useState(false);
-  const [userFocus, setUserFocus] = useState(false);
-  const [passFocus, setPassFocus] = useState(false);
+  const [entKey,     setEntKey]     = useState(0);
+  const [username,   setUsername]   = useState('');
+  const [password,   setPassword]   = useState('');
+  const [message,    setMessage]    = useState('');
+  const [isError,    setIsError]    = useState(false);
+  const [logging,    setLogging]    = useState(false);
+  const [showPass,   setShowPass]   = useState(false);
+  const [userFocus,  setUserFocus]  = useState(false);
+  const [passFocus,  setPassFocus]  = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [appVersion, setAppVersion] = useState('');
 
   /* ── Verificar sessão ao abrir ───────────────────────────────────── */
   useEffect(() => {
+    window.electronAPI?.getVersion?.().then(v => { if (v) setAppVersion(`v${v}`); }).catch(() => {});
+
     async function checkSession() {
       const session = loadSession();
 
@@ -259,7 +194,6 @@ export default function LicenseGate({ children }) {
       const check = await window.electronAPI.checkCertificate(session.certificate);
 
       if (check.valid && !check.expired) {
-        // Certificado válido localmente — mas verifica online se os entitlements
         // Retoma sessão no processo principal (define token + hwid + inicia SSE).
         // Necessário porque ao abrir com cert válido o login é ignorado.
         if (session.token && check.payload?.hwid) {
@@ -431,202 +365,357 @@ export default function LicenseGate({ children }) {
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !logging) handleLogin();
-  };
+  const handleKeyDown = (e) => { if (e.key === 'Enter' && !logging) handleLogin(); };
 
-  /* ── Estilos dinâmicos por tema ──────────────────────────────────── */
-  const dynStyles = {
-    container: { ...styles.container, background: isDark ? '#0a0a0f' : '#f0f0f6' },
-    card: {
-      ...styles.card,
-      background: isDark ? 'linear-gradient(180deg, #111118 0%, #12121a 100%)' : '#ffffff',
-      border: isDark ? '1px solid #1e1e2e' : '1px solid #e0e0e8',
-    },
-    title:    { ...styles.title,    color: isDark ? '#f0f0f5' : '#111111' },
-    subtitle: { ...styles.subtitle, color: isDark ? '#8888a0' : '#444455' },
-    label:    { ...styles.label,    color: isDark ? '#8888a0' : '#444455' },
-    input: {
-      ...styles.input,
-      background: isDark ? '#0f0f1a' : '#f8f8fc',
-      border:     isDark ? '1px solid #1e1e2e' : '1px solid #d0d0dc',
-      color:      isDark ? '#f0f0f5' : '#111111',
-    },
-    loading:      { ...styles.loading,      background: isDark ? '#0a0a0f' : '#f0f0f6' },
-    loadingText:  { ...styles.loadingText,  color: isDark ? '#8888a0' : '#555566' },
-    info:         { ...styles.info,         color: isDark ? '#55556a' : '#666677' },
-    eyeBtn:       { ...styles.eyeBtn,       color: isDark ? '#55556a' : '#888899' },
-  };
-
-  const toggleBtn = (
-    <button
-      onClick={toggleTheme}
-      title={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
-      style={{
-        position: 'fixed', top: 14, right: 14,
-        background: isDark ? '#1e1e2e' : '#e8e8f0',
-        border: isDark ? '1px solid #2a2a3e' : '1px solid #d0d0dc',
-        borderRadius: 8, width: 36, height: 36,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', fontSize: 16, zIndex: 9999, transition: 'background 0.2s',
-      }}
-    >
+  /* ── Botão de tema ───────────────────────────────────────────────── */
+  const ThemeToggle = () => (
+    <button onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo escuro'} style={{
+      position: 'fixed', top: 14, right: 14, zIndex: 9999,
+      background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
+      width: 36, height: 36, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', cursor: 'pointer', fontSize: 16,
+    }}>
       {isDark ? '☀️' : '🌙'}
     </button>
   );
 
-  /* ── Render: verificando / renovando sessão ──────────────────────── */
+  /* ── Loading / Renewing ──────────────────────────────────────────── */
   if (status === 'checking' || status === 'renewing') {
     return (
-      <div style={dynStyles.loading}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        {toggleBtn}
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', minHeight: '100vh',
+        background: '#07080d', gap: 16, fontFamily: FONT,
+      }}>
+        <style>{`
+          @keyframes spin  { to { transform: rotate(360deg); } }
+          @keyframes pulse { 0%,100% { opacity:0.5; } 50% { opacity:1; } }
+        `}</style>
+        <ThemeToggle />
         <img src="./apex-icon.png" alt="Apex Dynamics"
-             style={{ width: 180, height: 'auto', objectFit: 'contain', marginBottom: 8 }} />
-        <div style={styles.spinner} />
-        <span style={dynStyles.loadingText}>
+             style={{ width: 150, height: 'auto', objectFit: 'contain', marginBottom: 8, animation: 'pulse 2s ease-in-out infinite' }} />
+        <div style={{ width: 26, height: 26, border: '2.5px solid #1e1e2e', borderTop: '2.5px solid #e63946', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <span style={{ color: '#9ba6b6', fontSize: 13 }}>
           {status === 'renewing' ? 'Renovando licença…' : 'Verificando sessão…'}
         </span>
       </div>
     );
   }
 
-  /* ── Render: app liberado ─────────────────────────────────────────── */
+  /* ── App liberado ────────────────────────────────────────────────── */
   // entKey como key força remontagem do TabGate quando entitlements mudam via SSE
   if (status === 'valid') return <div key={entKey} style={{ display: 'contents' }}>{children}</div>;
 
-  /* ── Render: conta bloqueada (banido / suspenso / assinatura vencida) ── */
-  if (block) {
-    return (
-      <div style={dynStyles.container}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        {toggleBtn}
-        <div style={dynStyles.card}>
-          <div style={styles.logoWrap}>
-            <img src={isDark ? './apex-logo.png' : './apex-logo-light.png'} alt="Apex Dynamics"
-                 style={{ width: '80%', maxWidth: 300, height: 'auto', objectFit: 'contain' }} />
-          </div>
-          <div style={styles.divider} />
+  /* ── Tela de Login ───────────────────────────────────────────────── */
+  const canSubmit = !logging && username.trim() && password;
 
-          <div style={styles.blockBox}>
-            <div style={styles.blockTitle}>
-              <span style={{ fontSize: 18 }}>⛔</span> {block.title}
-            </div>
-            <div style={styles.blockText}>{block.text}</div>
-
-            <div style={styles.contactRow}>
-              <span style={styles.contactLabel}>Fale com o administrador</span>
-              <a href={SUPPORT_WHATSAPP} target="_blank" rel="noreferrer"
-                 style={styles.contactBtn}
-                 onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
-                 onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.82 11.82 0 0 1 8.413 3.488 11.82 11.82 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884a9.86 9.86 0 0 0 1.519 5.276l-.999 3.648 3.469-.823z"/>
-                </svg>
-                {SUPPORT_PHONE}
-              </a>
-            </div>
-          </div>
-
-          <button
-            onClick={() => { setBlock(null); setMessage(''); setIsError(false); }}
-            style={{ ...styles.button, background: 'transparent', color: isDark ? '#8888a0' : '#666677',
-                     border: isDark ? '1px solid #1e1e2e' : '1px solid #d0d0dc' }}
-          >
-            Voltar ao login
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  /* ── Render: formulário de login ─────────────────────────────────── */
   return (
-    <div style={dynStyles.container}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      {toggleBtn}
-      <div style={dynStyles.card}>
+    <div style={{
+      position: 'relative', minHeight: '100vh', width: '100%',
+      display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+      fontFamily: FONT, overflow: 'hidden',
+      background: '#07080d',
+    }}>
+      <style>{`
+        @keyframes spin    { to { transform: rotate(360deg); } }
+        @keyframes slideIn { from { opacity:0; transform:translateX(32px); } to { opacity:1; transform:translateX(0); } }
+        .apex-input::placeholder { color: #5a6473; }
+        .apex-input:focus        { outline: none; }
+        .apex-link:hover         { opacity: 0.7 !important; }
+        .apex-btn:hover:not(:disabled) { background: #cc2d39 !important; box-shadow: 0 8px 28px rgba(230,57,70,0.5) !important; }
+        .apex-btn:active:not(:disabled){ transform: scale(0.985); }
+      `}</style>
 
-        <div style={styles.logoWrap}>
-          <img src={isDark ? './apex-logo.png' : './apex-logo-light.png'} alt="Apex Dynamics"
-               style={{ width: '80%', maxWidth: 300, height: 'auto', objectFit: 'contain' }} />
-        </div>
+      <ThemeToggle />
 
-        <div style={styles.divider} />
+      {/* ── Wallpaper fullscreen — preenche tudo sem cortar nem barra preta ── */}
+      <img
+        src="./Wallpaper_Login.png"
+        alt=""
+        style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          objectFit: 'fill',
+          pointerEvents: 'none',
+        }}
+      />
 
-        <h1 style={dynStyles.title}>Bem-vindo de volta</h1>
-        <p style={dynStyles.subtitle}>
-          Use as credenciais cadastradas no <strong>ApexIdentityManager</strong>.
-        </p>
+      {/* ── Gradiente suave sobre o lado direito para legibilidade do card ── */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(to right, transparent 40%, rgba(5,6,10,0.45) 60%, rgba(5,6,10,0.80) 78%, rgba(5,6,10,0.90) 100%)',
+        pointerEvents: 'none',
+      }} />
 
-        {/* Usuário */}
-        <div style={styles.formGroup}>
-          <label style={dynStyles.label}>Usuário</label>
-          <input
-            type="text"
-            placeholder="nome de usuário"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setUserFocus(true)}
-            onBlur={() => setUserFocus(false)}
-            style={{ ...dynStyles.input, ...(userFocus ? styles.inputFocus : {}) }}
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={64}
-          />
-        </div>
+      {/* ── Card de Login ── */}
+      <div style={{
+        position: 'relative', zIndex: 10,
+        width: 400,
+        marginRight: 220,
+        animation: 'slideIn 0.55s cubic-bezier(0.22,1,0.36,1) both',
+      }}>
 
-        {/* Senha */}
-        <div style={styles.formGroup}>
-          <label style={dynStyles.label}>Senha</label>
-          <div style={styles.inputWrap}>
-            <input
-              type={showPass ? 'text' : 'password'}
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onFocus={() => setPassFocus(true)}
-              onBlur={() => setPassFocus(false)}
-              style={{ ...dynStyles.input, paddingRight: 40, ...(passFocus ? styles.inputFocus : {}) }}
-              autoComplete="current-password"
-              maxLength={128}
-            />
-            <button onClick={() => setShowPass(p => !p)} style={dynStyles.eyeBtn}
+        {/* Barra vermelha topo */}
+        <div style={{ height: 3, borderRadius: '12px 12px 0 0', background: 'linear-gradient(90deg, #e63946, #b01e2b)' }} />
+
+        {/* Corpo do card */}
+        <div style={{
+          background: 'rgba(10, 12, 18, 0.82)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderTop: 'none',
+          borderRadius: '0 0 16px 16px',
+          padding: '32px 36px 28px',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)',
+        }}>
+
+          {block ? (
+            /* ── Conta bloqueada (banido / suspenso / assinatura vencida) ── */
+            <>
+              <div style={{
+                padding: '18px 18px', borderRadius: 12, marginBottom: 16, textAlign: 'left',
+                background: 'rgba(230,57,70,0.07)', border: '1px solid rgba(230,57,70,0.28)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: '#e63946', marginBottom: 8 }}>
+                  <span style={{ fontSize: 18 }}>⛔</span> {block.title}
+                </div>
+                <div style={{ fontSize: 13, color: '#c9c9d6', lineHeight: 1.6, marginBottom: 14 }}>
+                  {block.text}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 12, borderTop: '1px solid rgba(230,57,70,0.18)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#9ba6b6', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    Fale com o administrador
+                  </span>
+                  <a href={SUPPORT_WHATSAPP} target="_blank" rel="noreferrer"
+                     style={{
+                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                       padding: '10px 14px', background: '#25D366', border: 'none', borderRadius: 8,
+                       color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                       textDecoration: 'none', transition: 'opacity 0.2s',
+                     }}
+                     onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
+                     onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}>
+                    <WhatsAppIcon />
+                    {SUPPORT_PHONE}
+                  </a>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setBlock(null); setMessage(''); setIsError(false); }}
+                style={{
+                  width: '100%', padding: '11px', background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10,
+                  color: '#9ba6b6', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  fontFamily: FONT, transition: 'border-color 0.2s, color 0.2s',
+                }}
+              >
+                Voltar ao login
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Header */}
+              <div style={{ marginBottom: 26 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#e63946', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: 8 }}>
+                  BEM-VINDO DE VOLTA
+                </div>
+                <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, color: '#f4f6fa', letterSpacing: '-0.2px' }}>
+                  Acesse sua equipe
+                </h1>
+                <p style={{ margin: 0, fontSize: 13, color: '#9ba6b6', lineHeight: 1.6 }}>
+                  Use suas credenciais cadastradas no{' '}
+                  <strong style={{ color: '#c8d0dc', fontWeight: 600 }}>Apex Identity Manager</strong>.
+                </p>
+              </div>
+
+              {/* Mensagem erro/sucesso */}
+              {message && (
+                <div style={{
+                  padding: '9px 13px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  marginBottom: 16, lineHeight: 1.5,
+                  background: isError ? 'rgba(230,57,70,0.08)' : 'rgba(6,214,160,0.08)',
+                  color:      isError ? '#e63946'               : '#06d6a0',
+                  border:     `1px solid ${isError ? 'rgba(230,57,70,0.25)' : 'rgba(6,214,160,0.25)'}`,
+                }}>
+                  {message}
+                </div>
+              )}
+
+              {/* USUÁRIO */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9ba6b6', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
+                  USUÁRIO
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ position: 'absolute', left: 12, color: userFocus ? '#e63946' : '#5a6473', transition: 'color 0.2s', pointerEvents: 'none' }}>
+                    <UserIcon />
+                  </div>
+                  <input
+                    className="apex-input"
+                    type="text"
+                    placeholder="Nome de usuário"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onFocus={() => setUserFocus(true)}
+                    onBlur={() => setUserFocus(false)}
+                    autoComplete="off" spellCheck={false} maxLength={64}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: '11px 14px 11px 36px',
+                      background: userFocus ? 'rgba(20,24,34,0.9)' : 'rgba(12,14,22,0.8)',
+                      border: `1.5px solid ${userFocus ? '#e63946' : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: 10, color: '#f4f6fa', fontSize: 14, fontFamily: FONT,
+                      boxShadow: userFocus ? '0 0 0 3px rgba(230,57,70,0.12)' : 'none',
+                      transition: 'border-color 0.2s, box-shadow 0.2s, background 0.2s',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* SENHA */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9ba6b6', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
+                  SENHA
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ position: 'absolute', left: 12, color: passFocus ? '#e63946' : '#5a6473', transition: 'color 0.2s', pointerEvents: 'none' }}>
+                    <LockIcon />
+                  </div>
+                  <input
+                    className="apex-input"
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onFocus={() => setPassFocus(true)}
+                    onBlur={() => setPassFocus(false)}
+                    autoComplete="current-password" maxLength={128}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: '11px 42px 11px 36px',
+                      background: passFocus ? 'rgba(20,24,34,0.9)' : 'rgba(12,14,22,0.8)',
+                      border: `1.5px solid ${passFocus ? '#e63946' : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: 10, color: '#f4f6fa', fontSize: 14, fontFamily: FONT,
+                      boxShadow: passFocus ? '0 0 0 3px rgba(230,57,70,0.12)' : 'none',
+                      transition: 'border-color 0.2s, box-shadow 0.2s, background 0.2s',
+                    }}
+                  />
+                  <button
+                    onClick={() => setShowPass(p => !p)}
                     tabIndex={-1} type="button"
-                    aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'}>
-              <EyeIcon open={showPass} />
-            </button>
-          </div>
+                    aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'}
+                    style={{
+                      position: 'absolute', right: 0, top: 0, bottom: 0, width: 40,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: '#5a6473', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: '0 10px 10px 0', transition: 'color 0.2s',
+                    }}
+                  >
+                    <EyeIcon open={showPass} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Lembrar de mim + Esqueceu senha */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <div
+                    onClick={() => setRememberMe(p => !p)}
+                    style={{
+                      width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+                      background: rememberMe ? '#e63946' : 'transparent',
+                      border: `2px solid ${rememberMe ? '#e63946' : 'rgba(255,255,255,0.15)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'background 0.15s, border-color 0.15s',
+                    }}
+                  >
+                    {rememberMe && (
+                      <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+                        <polyline points="2,6 5,9 10,3"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13, color: '#9ba6b6' }}>Lembrar de mim</span>
+                </label>
+                <button type="button" className="apex-link"
+                  onClick={() => window.electronAPI?.openExternal?.(SUPPORT_WHATSAPP)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s' }}>
+                  Esqueceu sua senha?
+                </button>
+              </div>
+
+              {/* Botão ENTRAR */}
+              <button
+                className="apex-btn"
+                onClick={handleLogin}
+                disabled={!canSubmit}
+                style={{
+                  width: '100%', padding: '12px 20px', marginBottom: 20,
+                  background: canSubmit ? '#e63946' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${canSubmit ? 'transparent' : 'rgba(255,255,255,0.07)'}`,
+                  borderRadius: 10,
+                  color: canSubmit ? '#fff' : '#5a6473',
+                  fontSize: 14, fontWeight: 800, letterSpacing: '2px', fontFamily: FONT,
+                  cursor: canSubmit ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  boxShadow: canSubmit ? '0 6px 24px rgba(230,57,70,0.38)' : 'none',
+                  transition: 'background 0.2s, box-shadow 0.2s, color 0.2s, transform 0.1s',
+                }}
+              >
+                {logging
+                  ? <><div style={{ width: 17, height: 17, border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Autenticando…</>
+                  : <><span>ENTRAR</span><ArrowIcon /></>
+                }
+              </button>
+
+              {/* Separador */}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: 18 }} />
+
+              {/* Licença */}
+              <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#4a5260', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 2 }}>
+                  LICENÇA VÁLIDA POR 7 DIAS
+                </div>
+                <div style={{ fontSize: 11, color: '#3a4050' }}>
+                  Renovação automática ao abrir o app
+                </div>
+              </div>
+
+              {/* Links legais — abrem modal in-app (funciona offline) */}
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+                <button type="button" className="apex-link"
+                  onClick={() => setLegal('terms')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🔒 Termos de Uso
+                </button>
+                <span style={{ color: '#2b3340' }}>|</span>
+                <button type="button" className="apex-link"
+                  onClick={() => setLegal('privacy')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  🛡️ Política de Privacidade
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        {message && <div style={styles.message(isError)}>{message}</div>}
-
-        <button
-          onClick={handleLogin}
-          disabled={logging || !username.trim() || !password}
-          style={{ ...styles.button, ...(logging || !username.trim() || !password ? styles.buttonDisabled : {}) }}
-        >
-          {logging ? 'Autenticando…' : 'Entrar'}
-        </button>
-
-        <div style={dynStyles.info}>
-          Licença válida por 7 dias · Renovação automática ao abrir o app
+        {/* Rodapé abaixo do card */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 }}>
+          <div style={{ width: 20, height: 1, background: 'linear-gradient(90deg, transparent, rgba(230,57,70,0.6))' }} />
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '2.5px', textTransform: 'uppercase' }}>
+            APEX DYNAMICS{appVersion ? ` · ${appVersion}` : ''}
+          </span>
+          <div style={{ width: 20, height: 1, background: 'linear-gradient(90deg, rgba(230,57,70,0.6), transparent)' }} />
         </div>
-        <div style={{ ...dynStyles.info, marginTop: 8, fontSize: 11 }}>
-          <span
-            onClick={() => setLegal('terms')}
-            style={{ color: '#e63946', cursor: 'pointer', fontWeight: 600 }}
-          >Termos de Uso</span>
-          {' · '}
-          <span
-            onClick={() => setLegal('privacy')}
-            style={{ color: '#e63946', cursor: 'pointer', fontWeight: 600 }}
-          >Política de Privacidade</span>
-        </div>
+
       </div>
 
+      {/* ── Modal de Termos / Privacidade ── */}
       {legal && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setLegal(null); }}
@@ -637,17 +726,17 @@ export default function LicenseGate({ children }) {
           }}
         >
           <div style={{
-            background: isDark ? '#12141c' : '#ffffff',
-            border: `1px solid ${isDark ? '#232633' : '#e0e0e8'}`,
+            background: 'rgba(14, 16, 24, 0.97)',
+            border: '1px solid rgba(255,255,255,0.09)',
             borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '82vh',
             display: 'flex', flexDirection: 'column',
             boxShadow: '0 24px 64px rgba(0,0,0,0.55)', fontFamily: FONT,
           }}>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '16px 20px', borderBottom: `1px solid ${isDark ? '#232633' : '#e8e8f0'}`,
+              padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)',
             }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: isDark ? '#f0f0f5' : '#111' }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#f0f0f5' }}>
                 {legal === 'terms' ? 'Termos de Uso' : 'Política de Privacidade'}
               </h3>
               <button onClick={() => setLegal(null)} style={{
@@ -657,16 +746,18 @@ export default function LicenseGate({ children }) {
             </div>
             <div style={{
               padding: '18px 20px', overflowY: 'auto', whiteSpace: 'pre-wrap',
-              fontSize: 12.5, lineHeight: 1.65, color: isDark ? '#c3c8d4' : '#33333a',
+              fontSize: 12.5, lineHeight: 1.65, color: '#c3c8d4',
             }}>
               {legal === 'terms' ? APEX_LEGAL.termos : APEX_LEGAL.privacidade}
             </div>
             <div style={{
-              padding: '14px 20px', borderTop: `1px solid ${isDark ? '#232633' : '#e8e8f0'}`,
+              padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.08)',
               display: 'flex', justifyContent: 'flex-end',
             }}>
               <button onClick={() => setLegal(null)} style={{
-                ...styles.button, width: 'auto', padding: '9px 26px', marginTop: 0, marginBottom: 0,
+                padding: '9px 26px', background: '#e63946', border: 'none',
+                borderRadius: 8, color: '#fff', fontSize: 14, fontWeight: 600,
+                cursor: 'pointer', fontFamily: FONT,
               }}>Fechar</button>
             </div>
           </div>
