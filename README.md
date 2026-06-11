@@ -18,7 +18,16 @@ npm run dev
 npm run build
 ```
 
-O app abre em `http://localhost:3000`.
+O Vite abre em `http://localhost:3010` (apenas visualização — o login
+requer o app desktop). Para usar o sistema completo em desenvolvimento:
+
+```bash
+# Terminal 1 — servidor de UI
+npm run dev
+
+# Terminal 2 — janela desktop (onde o login funciona)
+npm run electron:dev
+```
 
 ---
 

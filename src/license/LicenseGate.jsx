@@ -201,11 +201,21 @@ export default function LicenseGate({ children }) {
   const [rememberMe, setRememberMe] = useState(true);
   const [appVersion, setAppVersion] = useState('');
 
+  /* Detecta execução fora do Electron (navegador) — login indisponível. */
+  const isElectron = !!window.electronAPI?.login;
+
   /* ── Verificar sessão ao abrir ───────────────────────────────────── */
   useEffect(() => {
     window.electronAPI?.getVersion?.().then(v => { if (v) setAppVersion(`v${v}`); }).catch(() => {});
 
     async function checkSession() {
+      // Navegador (sem preload do Electron): vai direto pro formulário,
+      // que exibe o aviso de modo visualização.
+      if (!window.electronAPI?.checkCertificate) {
+        setStatus('login');
+        return;
+      }
+
       const session = loadSession();
 
       if (!session?.certificate) {
@@ -333,6 +343,12 @@ export default function LicenseGate({ children }) {
 
   /* ── Login real via ApexServer ───────────────────────────────────── */
   const handleLogin = async () => {
+    if (!isElectron) {
+      setMessage('O login está disponível apenas no aplicativo desktop ApexDynamics.');
+      setIsError(true);
+      return;
+    }
+
     const user = username.trim();
     const pass = password;
 
@@ -556,6 +572,24 @@ export default function LicenseGate({ children }) {
                   <strong style={{ color: '#c8d0dc', fontWeight: 600 }}>Apex Identity Manager</strong>.
                 </p>
               </div>
+
+              {/* Aviso: rodando no navegador (sem Electron) */}
+              {!isElectron && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '11px 14px', borderRadius: 10, marginBottom: 16,
+                  background: 'rgba(17,138,178,0.10)',
+                  border: '1px solid rgba(17,138,178,0.35)',
+                  lineHeight: 1.55,
+                }}>
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>🖥️</span>
+                  <span style={{ fontSize: 12.5, color: '#9fc9dd' }}>
+                    <strong style={{ color: '#cfe8f4' }}>Modo visualização (navegador).</strong>{' '}
+                    Para fazer login e usar o sistema, abra o aplicativo
+                    desktop <strong style={{ color: '#cfe8f4' }}>ApexDynamics</strong>.
+                  </span>
+                </div>
+              )}
 
               {/* Mensagem erro/sucesso */}
               {message && (
