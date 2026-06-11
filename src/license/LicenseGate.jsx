@@ -24,6 +24,8 @@ const SUPPORT_PHONE    = '(11) 99301-9308';
 const SUPPORT_WHATSAPP = 'https://wa.me/5511993019308';
 
 const FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const FONT_DISPLAY = "'Rajdhani', 'Inter', sans-serif";
+const FONT_MONO = "'JetBrains Mono', 'Consolas', monospace";
 
 /* ─── SVG Icons ────────────────────────────────────────────────────── */
 
@@ -70,6 +72,27 @@ function ArrowIcon() {
          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="5" y1="12" x2="19" y2="12"/>
       <polyline points="12 5 19 12 12 19"/>
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  );
+}
+
+function DocIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
     </svg>
   );
 }
@@ -395,9 +418,12 @@ export default function LicenseGate({ children }) {
         <ThemeToggle />
         <img src="./apex-icon.png" alt="Apex Dynamics"
              style={{ width: 150, height: 'auto', objectFit: 'contain', marginBottom: 8, animation: 'pulse 2s ease-in-out infinite' }} />
-        <div style={{ width: 26, height: 26, border: '2.5px solid #1e1e2e', borderTop: '2.5px solid #e63946', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <span style={{ color: '#9ba6b6', fontSize: 13 }}>
-          {status === 'renewing' ? 'Renovando licença…' : 'Verificando sessão…'}
+        <div style={{ width: 26, height: 26, border: '2.5px solid #1d2433', borderTop: '2.5px solid #e63946', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <span style={{
+          color: '#8f98ab', fontSize: 12, fontFamily: FONT_DISPLAY,
+          fontWeight: 600, letterSpacing: '2.5px', textTransform: 'uppercase',
+        }}>
+          {status === 'renewing' ? 'Renovando licença' : 'Verificando sessão'}
         </span>
       </div>
     );
@@ -452,7 +478,7 @@ export default function LicenseGate({ children }) {
       <div style={{
         position: 'relative', zIndex: 10,
         width: 400,
-        marginRight: 220,
+        marginRight: 'clamp(32px, 15vw, 220px)',
         animation: 'slideIn 0.55s cubic-bezier(0.22,1,0.36,1) both',
       }}>
 
@@ -519,10 +545,10 @@ export default function LicenseGate({ children }) {
             <>
               {/* Header */}
               <div style={{ marginBottom: 26 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: '#e63946', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: 8 }}>
-                  BEM-VINDO DE VOLTA
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: '#e63946', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Bem-vindo de volta
                 </div>
-                <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, color: '#f4f6fa', letterSpacing: '-0.2px' }}>
+                <h1 style={{ fontFamily: FONT_DISPLAY, margin: '0 0 6px', fontSize: 30, fontWeight: 700, color: '#f4f6fa', letterSpacing: '0.5px', lineHeight: 1.05 }}>
                   Acesse sua equipe
                 </h1>
                 <p style={{ margin: 0, fontSize: 13, color: '#9ba6b6', lineHeight: 1.6 }}>
@@ -546,8 +572,8 @@ export default function LicenseGate({ children }) {
 
               {/* USUÁRIO */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9ba6b6', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
-                  USUÁRIO
+                <label style={{ display: 'block', fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: '#9ba6b6', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Usuário
                 </label>
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <div style={{ position: 'absolute', left: 12, color: userFocus ? '#e63946' : '#5a6473', transition: 'color 0.2s', pointerEvents: 'none' }}>
@@ -578,8 +604,8 @@ export default function LicenseGate({ children }) {
 
               {/* SENHA */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9ba6b6', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 6 }}>
-                  SENHA
+                <label style={{ display: 'block', fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: '#9ba6b6', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Senha
                 </label>
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <div style={{ position: 'absolute', left: 12, color: passFocus ? '#e63946' : '#5a6473', transition: 'color 0.2s', pointerEvents: 'none' }}>
@@ -660,7 +686,7 @@ export default function LicenseGate({ children }) {
                   border: `1px solid ${canSubmit ? 'transparent' : 'rgba(255,255,255,0.07)'}`,
                   borderRadius: 10,
                   color: canSubmit ? '#fff' : '#5a6473',
-                  fontSize: 14, fontWeight: 800, letterSpacing: '2px', fontFamily: FONT,
+                  fontSize: 16, fontWeight: 700, letterSpacing: '3px', fontFamily: FONT_DISPLAY,
                   cursor: canSubmit ? 'pointer' : 'not-allowed',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                   boxShadow: canSubmit ? '0 6px 24px rgba(230,57,70,0.38)' : 'none',
@@ -678,8 +704,8 @@ export default function LicenseGate({ children }) {
 
               {/* Licença */}
               <div style={{ textAlign: 'center', marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#4a5260', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 2 }}>
-                  LICENÇA VÁLIDA POR 7 DIAS
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: '#4a5260', letterSpacing: '1.8px', textTransform: 'uppercase', marginBottom: 2 }}>
+                  Licença válida por 7 dias
                 </div>
                 <div style={{ fontSize: 11, color: '#3a4050' }}>
                   Renovação automática ao abrir o app
@@ -687,17 +713,17 @@ export default function LicenseGate({ children }) {
               </div>
 
               {/* Links legais — abrem modal in-app (funciona offline) */}
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
                 <button type="button" className="apex-link"
                   onClick={() => setLegal('terms')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  🔒 Termos de Uso
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <DocIcon /> Termos de Uso
                 </button>
                 <span style={{ color: '#2b3340' }}>|</span>
                 <button type="button" className="apex-link"
                   onClick={() => setLegal('privacy')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  🛡️ Política de Privacidade
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 600, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <ShieldIcon /> Política de Privacidade
                 </button>
               </div>
             </>
@@ -707,7 +733,7 @@ export default function LicenseGate({ children }) {
         {/* Rodapé abaixo do card */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 }}>
           <div style={{ width: 20, height: 1, background: 'linear-gradient(90deg, transparent, rgba(230,57,70,0.6))' }} />
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '2.5px', textTransform: 'uppercase' }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 9.5, color: 'rgba(255,255,255,0.22)', letterSpacing: '2.5px', textTransform: 'uppercase' }}>
             APEX DYNAMICS{appVersion ? ` · ${appVersion}` : ''}
           </span>
           <div style={{ width: 20, height: 1, background: 'linear-gradient(90deg, rgba(230,57,70,0.6), transparent)' }} />
