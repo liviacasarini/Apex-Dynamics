@@ -38,13 +38,15 @@ export default function SaveLoadBar({
   };
 
   const btnStyle = {
-    padding: '4px 10px',
+    padding: '5px 11px',
     fontSize: 11,
     fontWeight: 700,
+    letterSpacing: '0.3px',
     border: 'none',
-    borderRadius: 4,
+    borderRadius: 6,
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
+    transition: 'opacity 0.15s, box-shadow 0.15s',
   };
 
   return (
@@ -59,18 +61,24 @@ export default function SaveLoadBar({
           disabled={disabled}
           style={{
             flex: 1,
-            padding: '4px 8px',
+            padding: '5px 10px',
             fontSize: 12,
             background: C.bg,
             color: C.textPrimary,
             border: `1px solid ${C.border}`,
-            borderRadius: 4,
+            borderRadius: 7,
+            outline: 'none',
           }}
         />
         <button
           onClick={handleSave}
           disabled={disabled}
-          style={{ ...btnStyle, background: C.accent, color: '#fff' }}
+          style={{
+            ...btnStyle,
+            background: C.accent,
+            color: '#fff',
+            boxShadow: disabled ? 'none' : `0 4px 12px -6px ${C.accentGlow || C.accent + '66'}`,
+          }}
         >
           Salvar
         </button>
@@ -85,26 +93,30 @@ export default function SaveLoadBar({
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              padding: '4px 8px',
+              padding: '5px 10px',
               background: C.bg,
-              borderRadius: 4,
+              borderRadius: 8,
               border: `1px solid ${C.border}`,
             }}>
-              <span style={{ flex: 1, fontSize: 12, color: C.textPrimary }}>{item.name}</span>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: C.textPrimary }}>{item.name}</span>
               {item.date && (
-                <span style={{ fontSize: 10, color: C.textMuted }}>
+                <span style={{
+                  fontSize: 10, color: C.textMuted,
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}>
                   {new Date(item.date).toLocaleDateString('pt-BR')}
                 </span>
               )}
               <button
                 onClick={() => onLoad(item.id)}
-                style={{ ...btnStyle, background: C.green, color: '#000' }}
+                style={{ ...btnStyle, background: `${C.green}1e`, color: C.green, border: `1px solid ${C.green}55` }}
               >
                 Carregar
               </button>
               <button
                 onClick={() => onDelete(item.id)}
-                style={{ ...btnStyle, background: 'transparent', color: C.accent, border: `1px solid ${C.accent}` }}
+                title={`Excluir ${label}`}
+                style={{ ...btnStyle, background: 'transparent', color: C.accent, border: `1px solid ${C.accent}55` }}
               >
                 ✕
               </button>

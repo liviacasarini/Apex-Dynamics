@@ -142,6 +142,7 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
   }, [vehicleType]);
   const [open,  setOpen]  = useState(false);
   const [dragOverId, setDragOverId] = useState(null);
+  const [hoverId, setHoverId] = useState(null);
   const dragId = useRef(null);
 
   function move(index, dir) {
@@ -179,7 +180,7 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
     next.splice(fromIdx, 1);
     next.splice(toIdx, 0, dragId.current);
     setOrder(next);
-    saveOrder(next);
+    saveOrder(next, vehicleType);
     dragId.current = null;
     setDragOverId(null);
   }
@@ -198,20 +199,31 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
   return (
     <>
       <nav style={{
-        width: 200,
-        minWidth: 200,
+        width: 206,
+        minWidth: 206,
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
         borderRight: `1px solid ${COLORS.border}`,
-        background: COLORS.bgCard,
+        background: `linear-gradient(180deg, ${COLORS.bgCard} 0%, ${COLORS.bg} 130%)`,
         overflowY: 'auto',
-        paddingTop: 8,
-        paddingBottom: 8,
+        overflowX: 'hidden',
+        padding: '10px 8px',
       }}>
+        <div style={{
+          fontFamily: "'Rajdhani', 'Inter', sans-serif",
+          fontSize: 10.5, fontWeight: 700, letterSpacing: '2.5px',
+          textTransform: 'uppercase', color: COLORS.textMuted,
+          padding: '2px 12px 8px',
+          userSelect: 'none',
+        }}>
+          Navegação
+        </div>
+
         {visibleTabs.map((tab) => {
-          const active   = activeTab === tab.id;
+          const active     = activeTab === tab.id;
           const isDragOver = dragOverId === tab.id;
+          const hovered    = hoverId === tab.id;
           return (
             <div
               key={tab.id}
@@ -221,24 +233,53 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
               onDragOver={(e) => handleDragOver(e, tab.id)}
               onDrop={() => handleDrop(tab.id)}
               onDragEnd={handleDragEnd}
+              onMouseEnter={() => setHoverId(tab.id)}
+              onMouseLeave={() => setHoverId(null)}
               style={{
-                padding: '10px 16px',
+                position: 'relative',
+                padding: '8.5px 12px',
+                marginBottom: 1,
+                borderRadius: 9,
                 cursor: 'grab',
                 fontSize: 13,
-                color: active ? COLORS.accent : COLORS.textSecondary,
-                borderLeft: active ? `3px solid ${COLORS.accent}` : '3px solid transparent',
+                color: active ? COLORS.accent : hovered ? COLORS.textPrimary : COLORS.textSecondary,
                 background: isDragOver
                   ? `${COLORS.accent}22`
-                  : active ? `${COLORS.accent}12` : 'transparent',
+                  : active
+                    ? (COLORS.accentSoft || `${COLORS.accent}12`)
+                    : hovered ? `${COLORS.border}44` : 'transparent',
+                boxShadow: active ? `inset 0 0 0 1px ${COLORS.accent}33, 0 4px 14px -10px ${COLORS.accentGlow}` : 'none',
                 borderTop: isDragOver ? `2px solid ${COLORS.accent}` : '2px solid transparent',
-                transition: 'background 0.1s, border 0.1s',
-                fontWeight: active ? 600 : 400,
+                transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
+                fontWeight: active ? 700 : 500,
                 display: 'flex', alignItems: 'center', gap: 9,
                 userSelect: 'none',
               }}
             >
-              <span style={{ fontSize: 15, pointerEvents: 'none' }}>{tab.icon}</span>
-              <span style={{ pointerEvents: 'none', flex: 1 }}>{tab.label}</span>
+              {/* Barra accent à esquerda quando ativo */}
+              {active && (
+                <span style={{
+                  position: 'absolute', left: 0, top: '22%', bottom: '22%', width: 3,
+                  borderRadius: 3,
+                  background: `linear-gradient(180deg, ${COLORS.accent}, ${COLORS.accentDark || COLORS.accent})`,
+                  boxShadow: `0 0 8px ${COLORS.accentGlow}`,
+                  pointerEvents: 'none',
+                }} />
+              )}
+              <span style={{
+                fontSize: 14, pointerEvents: 'none',
+                width: 24, height: 24, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 6,
+                background: active ? `${COLORS.accent}1a` : `${COLORS.border}55`,
+                filter: active ? 'none' : 'saturate(0.85)',
+                transition: 'background 0.15s',
+              }}>{tab.icon}</span>
+              <span style={{
+                pointerEvents: 'none', flex: 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                letterSpacing: '0.2px',
+              }}>{tab.label}</span>
               {isTabEditable(tab.id) ? null : isComingSoon(tab.id) ? (
                 <span style={{ pointerEvents: 'none', fontSize: 11, opacity: 0.8 }}
                       title="Funcionalidade futura — em breve">🔜</span>
@@ -251,7 +292,7 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
         })}
 
         {/* Botão reset ordem */}
-        <div style={{ marginTop: 'auto', padding: '12px 12px 4px' }}>
+        <div style={{ marginTop: 'auto', padding: '12px 4px 2px' }}>
           <button
             onClick={() => { reset(); }}
             title="Restaurar ordem padrão das abas"
@@ -259,12 +300,21 @@ export default function TabBar({ activeTab, onTabChange, isLoaded, vehicleType =
               width: '100%',
               background: 'transparent',
               border: `1px solid ${COLORS.border}`,
-              borderRadius: 6,
+              borderRadius: 8,
               color: COLORS.textMuted,
               cursor: 'pointer',
-              fontSize: 12,
-              padding: '6px 10px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              fontSize: 11.5,
+              fontWeight: 600,
+              padding: '7px 10px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = COLORS.borderLight;
+              e.currentTarget.style.color = COLORS.textSecondary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = COLORS.border;
+              e.currentTarget.style.color = COLORS.textMuted;
             }}
           >
             ↺ Restaurar ordem

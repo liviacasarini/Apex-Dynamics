@@ -122,14 +122,14 @@ export default function WorkspaceBar({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 24px',
+        padding: '0 18px',
         background: COLORS.bg,
-        borderBottom: `1px solid ${COLORS.border}44`,
-        minHeight: 34,
+        borderBottom: `1px solid ${COLORS.border}66`,
+        minHeight: 38,
       }}
     >
       {/* ── Workspace tabs + New ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflowX: 'auto', padding: '4px 0' }}>
         {workspaces.map((w) => {
           const active = w.id === activeWorkspaceId;
           return (
@@ -137,21 +137,24 @@ export default function WorkspaceBar({
               key={w.id}
               onClick={() => onSetActive(w.id)}
               style={{
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
-                padding: '6px 18px',
-                fontSize: 11,
-                fontWeight: active ? 700 : 400,
+                padding: '6px 14px',
+                fontSize: 11.5,
+                fontWeight: active ? 700 : 500,
                 cursor: 'pointer',
                 color: active ? COLORS.textPrimary : COLORS.textMuted,
-                borderBottom: active
-                  ? `2px solid ${COLORS.accent}99`
-                  : '2px solid transparent',
+                background: active ? `${COLORS.border}44` : 'transparent',
+                borderRadius: 8,
+                boxShadow: active ? `inset 0 -2px 0 ${COLORS.accent}` : 'none',
                 whiteSpace: 'nowrap',
                 userSelect: 'none',
-                transition: 'color 0.15s',
+                transition: 'color 0.15s, background 0.15s, box-shadow 0.15s',
                 letterSpacing: '0.4px',
               }}
+              onMouseEnter={(e) => { if (!active) e.currentTarget.style.color = COLORS.textSecondary; }}
+              onMouseLeave={(e) => { if (!active) e.currentTarget.style.color = COLORS.textMuted; }}
             >
               {loadedWorkspaceIds?.has(w.id) && (
                 <span
@@ -162,6 +165,7 @@ export default function WorkspaceBar({
                     height: 6,
                     borderRadius: '50%',
                     background: COLORS.green,
+                    boxShadow: `0 0 6px ${COLORS.green}aa`,
                     marginRight: 6,
                     flexShrink: 0,
                   }}
@@ -276,19 +280,32 @@ export default function WorkspaceBar({
             onClick={handleCreate}
             title="Novo workspace"
             style={{
-              padding: '6px 12px',
-              fontSize: 16,
+              width: 26,
+              height: 26,
+              marginLeft: 4,
+              fontSize: 15,
               lineHeight: 1,
               cursor: 'pointer',
               color: COLORS.textMuted,
-              borderBottom: '2px solid transparent',
+              border: `1px dashed ${COLORS.border}`,
+              borderRadius: 7,
               userSelect: 'none',
               display: 'flex',
               alignItems: 'center',
-              transition: 'color 0.15s',
+              justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'color 0.15s, border-color 0.15s, background 0.15s',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.textSecondary)}
-            onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.textMuted)}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = COLORS.accent;
+              e.currentTarget.style.borderColor = `${COLORS.accent}88`;
+              e.currentTarget.style.background = COLORS.accentSoft || `${COLORS.accent}12`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = COLORS.textMuted;
+              e.currentTarget.style.borderColor = COLORS.border;
+              e.currentTarget.style.background = 'transparent';
+            }}
           >
             +
           </div>
@@ -321,13 +338,13 @@ export default function WorkspaceBar({
               position: 'absolute',
               right: 0,
               top: 'calc(100% + 6px)',
-              background: COLORS.bgCard,
+              background: COLORS.bgElevated || COLORS.bgCard,
               border: `1px solid ${COLORS.border}`,
-              borderRadius: 8,
+              borderRadius: 10,
               padding: 12,
               zIndex: 200,
               minWidth: 190,
-              boxShadow: '0 8px 28px rgba(0,0,0,0.7)',
+              boxShadow: COLORS.shadowPopup || '0 8px 28px rgba(0,0,0,0.7)',
             }}
           >
             {/* Workspace label */}

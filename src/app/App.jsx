@@ -581,6 +581,7 @@ function AppInner() {
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 96px)' }}>
         <TabBar activeTab={activeTab} onTabChange={profiles.setActiveTab} isLoaded={isLoaded} vehicleType={profiles.vehicleType} />
         <main style={{ flex: 1, minWidth: 0, maxWidth: 1600, margin: '0 auto', width: '100%', padding: '0 8px' }}>
+          <div key={activeTab} className="apex-tab-content">
           <TabGate activeTab={activeTab}>
 
           {activeTab === 'overview' && (
@@ -959,6 +960,7 @@ function AppInner() {
           )}
 
           </TabGate>
+          </div>
         </main>
       </div>
     </div>

@@ -18,12 +18,14 @@ export default function FilterModeBar({ filterMode = 'filtered', setFilterMode, 
   return (
     <div style={{
       display: 'flex',
-      borderRadius: 7,
-      overflow: 'hidden',
+      gap: 3,
+      padding: 3,
+      borderRadius: 9,
       border: `1px solid ${COLORS.border}`,
+      background: `${COLORS.bg}88`,
       width: 'fit-content',
     }}>
-      {buttons.map(({ mode, label }, idx) => {
+      {buttons.map(({ mode, label }) => {
         const active = filterMode === mode;
         const activeColor = mode === 'pitexit' ? COLORS.blue : mode === 'filtered' ? COLORS.green : COLORS.yellow;
         return (
@@ -36,11 +38,12 @@ export default function FilterModeBar({ filterMode = 'filtered', setFilterMode, 
               'Out-lap: tempo começa quando o carro acelerou na pista'
             }
             style={{
-              padding: '5px 13px', fontSize: 12, fontWeight: 600,
+              padding: '4px 13px', fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
-              background: active ? `${activeColor}22` : 'transparent',
+              background: active ? `${activeColor}1e` : 'transparent',
               border: 'none',
-              borderLeft: idx > 0 ? `1px solid ${COLORS.border}` : 'none',
+              borderRadius: 7,
+              boxShadow: active ? `inset 0 0 0 1px ${activeColor}55` : 'none',
               color: active ? activeColor : COLORS.textSecondary,
               transition: 'all 0.15s',
               whiteSpace: 'nowrap',

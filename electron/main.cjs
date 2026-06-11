@@ -522,7 +522,7 @@ function createWindow() {
       enableRemoteModule: false,
       devTools: isDev,
     },
-    backgroundColor: '#0a0a0f',
+    backgroundColor: '#07090f',
     show: false,
   });
 
