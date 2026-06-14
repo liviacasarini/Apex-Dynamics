@@ -31,6 +31,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('license:login', { username, password }),
 
   /**
+   * Solicita a criação de uma nova conta (cadastro). Exige internet.
+   * A conta é criada como PENDENTE no servidor — sem acesso até o
+   * administrador aprovar no painel admin. Não retorna sessão/token.
+   * @param {{ name, email, username, password, phone }} payload
+   * @returns {Promise<{ success, message?, offline?, duplicate? }>}
+   */
+  register: (payload) =>
+    ipcRenderer.invoke('license:register', payload),
+
+  /**
    * Verifica o certificado RS256 localmente (sem internet).
    * Valida assinatura + expiração por dias corridos de calendário.
    * @param {string} certificate — JWT RS256

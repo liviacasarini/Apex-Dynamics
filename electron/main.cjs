@@ -640,6 +640,43 @@ ipcMain.handle('license:login', async (_event, { username, password }) => {
   }
 });
 
+/* ── IPC: Cadastro de nova conta (pendente de aprovação) ───────────── */
+
+/**
+ * Cria uma conta nova no ApexServer. Exige internet (httpsPost).
+ * A conta nasce PENDENTE: o servidor não emite token nem certificado —
+ * o usuário só consegue logar depois que o administrador aprovar no
+ * painel admin. O HWID é enviado para o admin ver de qual máquina veio.
+ */
+ipcMain.handle('license:register', async (_event, payload) => {
+  try {
+    const { name, email, username, password, phone } = payload || {};
+
+    if (!name || !email || !username || !password) {
+      return { success: false, message: 'Preencha todos os campos obrigatórios.' };
+    }
+
+    const hwid = await getHWID();
+    if (!hwid) {
+      return { success: false, message: 'Não foi possível detectar o hardware desta máquina.' };
+    }
+
+    const res = await httpsPost('/api/auth/register', {
+      name, email, username, password, phone: phone || '', hwid,
+    });
+
+    if (!res.ok) {
+      // Sem internet → bloqueia o cadastro (1º acesso exige conexão)
+      return { success: false, message: res.error || 'Erro de conexão.', offline: res.offline };
+    }
+
+    // Propaga a resposta do servidor: { success, message?, duplicate? }
+    return res.data;
+  } catch {
+    return { success: false, message: 'Erro ao processar o cadastro.' };
+  }
+});
+
 /* ── IPC: Verificar certificado RS256 localmente ───────────────────── */
 
 /**

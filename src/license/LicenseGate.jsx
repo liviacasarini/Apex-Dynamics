@@ -105,6 +105,46 @@ function WhatsAppIcon() {
   );
 }
 
+function IdIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <circle cx="9" cy="10" r="2"/>
+      <path d="M15 8h3M15 12h3M7 16h10"/>
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <path d="m22 7-10 6L2 7"/>
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>
+    </svg>
+  );
+}
+
+function CheckCircleIcon() {
+  return (
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+      <polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+  );
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
 /**
@@ -153,6 +193,12 @@ function checkAndNotifyCertExpiry(payload) {
 function classifyBlock(result) {
   const msg = (result?.message || '').toLowerCase();
 
+  if (result?.pending || msg.includes('pendente') || msg.includes('aprovaç') || msg.includes('aguard') || msg.includes('liberaç') || msg.includes('análise') || msg.includes('analise')) {
+    return {
+      title: 'Conta aguardando aprovação',
+      text: 'Seu cadastro foi recebido e está em análise. Assim que o administrador liberar seu acesso, você poderá entrar normalmente. Em caso de dúvida, fale com o administrador pelo número abaixo.',
+    };
+  }
   if (result?.expired || msg.includes('expirad') || msg.includes('assinatura') || msg.includes('venceu') || msg.includes('vencid')) {
     return {
       title: 'Assinatura expirada',
@@ -201,8 +247,22 @@ export default function LicenseGate({ children }) {
   const [rememberMe, setRememberMe] = useState(true);
   const [appVersion, setAppVersion] = useState('');
 
+  // view: alterna o conteúdo do card entre login, cadastro e tela de sucesso.
+  const [view,       setView]       = useState('login'); // 'login' | 'register' | 'registered'
+  const [reg,        setReg]        = useState({ name: '', email: '', user: '', pass: '', pass2: '', phone: '' });
+  const [regAccept,  setRegAccept]  = useState(false);
+  const [regLoading, setRegLoading] = useState(false);
+  const [regMsg,     setRegMsg]     = useState('');
+  const [regErr,     setRegErr]     = useState(false);
+  const [regShowPass,setRegShowPass]= useState(false);
+  const [regFocus,   setRegFocus]   = useState(null);
+
   /* Detecta execução fora do Electron (navegador) — login indisponível. */
   const isElectron = !!window.electronAPI?.login;
+
+  const setRegField = (k) => (e) => { setReg((r) => ({ ...r, [k]: e.target.value })); setRegMsg(''); };
+  const goLogin    = () => { setView('login'); setMessage(''); setIsError(false); };
+  const goRegister = () => { setView('register'); setRegMsg(''); setRegErr(false); setMessage(''); };
 
   /* ── Verificar sessão ao abrir ───────────────────────────────────── */
   useEffect(() => {
@@ -406,6 +466,59 @@ export default function LicenseGate({ children }) {
 
   const handleKeyDown = (e) => { if (e.key === 'Enter' && !logging) handleLogin(); };
 
+  /* ── Cadastro de nova conta (pendente de aprovação) ──────────────── */
+  const handleRegister = async () => {
+    if (!isElectron) {
+      setRegMsg('O cadastro está disponível apenas no aplicativo desktop ApexDynamics.');
+      setRegErr(true);
+      return;
+    }
+
+    const name  = reg.name.trim();
+    const email = reg.email.trim();
+    const user  = reg.user.trim();
+
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+    if (name.length < 3)        { setRegMsg('Informe seu nome completo.');                 setRegErr(true); return; }
+    if (!emailOk)               { setRegMsg('Informe um e-mail válido.');                  setRegErr(true); return; }
+    if (user.length < 3)        { setRegMsg('O usuário deve ter ao menos 3 caracteres.');  setRegErr(true); return; }
+    if (reg.pass.length < 6)    { setRegMsg('A senha deve ter ao menos 6 caracteres.');    setRegErr(true); return; }
+    if (reg.pass !== reg.pass2) { setRegMsg('As senhas não coincidem.');                   setRegErr(true); return; }
+    if (!regAccept)             { setRegMsg('É preciso aceitar os Termos de Uso e a Política de Privacidade.'); setRegErr(true); return; }
+
+    setRegLoading(true);
+    setRegMsg('');
+
+    try {
+      const result = await window.electronAPI.register({
+        name, email, username: user, password: reg.pass, phone: reg.phone.trim(),
+      });
+
+      if (result.success) {
+        // Conta criada como PENDENTE — sem login até o admin aprovar.
+        setView('registered');
+        setReg({ name: '', email: '', user: '', pass: '', pass2: '', phone: '' });
+        setRegAccept(false);
+        return;
+      }
+
+      if (result.offline) {
+        setRegMsg('Sem conexão com a internet. O cadastro exige internet.');
+      } else if (result.duplicate || (result.message || '').toLowerCase().includes('já')) {
+        setRegMsg(result.message || 'Usuário ou e-mail já cadastrado.');
+      } else {
+        setRegMsg(result.message || 'Não foi possível criar a conta. Tente novamente.');
+      }
+      setRegErr(true);
+    } catch {
+      setRegMsg('Erro inesperado. Tente novamente.');
+      setRegErr(true);
+    } finally {
+      setRegLoading(false);
+    }
+  };
+
   /* ── Botão de tema ───────────────────────────────────────────────── */
   const ThemeToggle = () => (
     <button onClick={toggleTheme} title={isDark ? 'Modo claro' : 'Modo escuro'} style={{
@@ -451,6 +564,54 @@ export default function LicenseGate({ children }) {
 
   /* ── Tela de Login ───────────────────────────────────────────────── */
   const canSubmit = !logging && username.trim() && password;
+
+  // Helper de input do cadastro. É uma FUNÇÃO que retorna JSX (não um
+  // componente) — chamada inline, o React reconcilia por posição e não
+  // remonta a cada tecla (evita perda de foco).
+  const regInput = ({ field, label, placeholder, icon, type = 'text', maxLength = 64, autoComplete = 'off' }) => {
+    const focused = regFocus === field;
+    const isPass  = field === 'pass' || field === 'pass2';
+    const inputType = isPass ? (regShowPass ? 'text' : 'password') : type;
+    return (
+      <div style={{ marginBottom: 11 }}>
+        <label style={{ display: 'block', fontFamily: FONT_DISPLAY, fontSize: 12, fontWeight: 700, color: '#9ba6b6', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: 5 }}>
+          {label}
+        </label>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <div style={{ position: 'absolute', left: 12, color: focused ? '#e63946' : '#5a6473', transition: 'color 0.2s', pointerEvents: 'none', display: 'flex' }}>
+            {icon}
+          </div>
+          <input
+            className="apex-input"
+            type={inputType}
+            placeholder={placeholder}
+            value={reg[field]}
+            onChange={setRegField(field)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !regLoading) handleRegister(); }}
+            onFocus={() => setRegFocus(field)}
+            onBlur={() => setRegFocus(null)}
+            autoComplete={autoComplete} spellCheck={false} maxLength={maxLength}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: field === 'pass' ? '11px 42px 11px 36px' : '11px 14px 11px 36px',
+              background: focused ? 'rgba(20,24,34,0.9)' : 'rgba(12,14,22,0.8)',
+              border: `1.5px solid ${focused ? '#e63946' : 'rgba(255,255,255,0.08)'}`,
+              borderRadius: 10, color: '#f4f6fa', fontSize: 14, fontFamily: FONT,
+              boxShadow: focused ? '0 0 0 3px rgba(230,57,70,0.12)' : 'none',
+              transition: 'border-color 0.2s, box-shadow 0.2s, background 0.2s',
+            }}
+          />
+          {field === 'pass' && (
+            <button onClick={() => setRegShowPass((p) => !p)} tabIndex={-1} type="button"
+              aria-label={regShowPass ? 'Ocultar senha' : 'Mostrar senha'}
+              style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 40, background: 'transparent', border: 'none', cursor: 'pointer', color: '#5a6473', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '0 10px 10px 0' }}>
+              <EyeIcon open={regShowPass} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -511,6 +672,8 @@ export default function LicenseGate({ children }) {
           borderRadius: '0 0 16px 16px',
           padding: '32px 36px 28px',
           boxShadow: '0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)',
+          maxHeight: 'calc(100vh - 96px)',
+          overflowY: 'auto',
         }}>
 
           {block ? (
@@ -556,6 +719,169 @@ export default function LicenseGate({ children }) {
               >
                 Voltar ao login
               </button>
+            </>
+          ) : view === 'registered' ? (
+            /* ── Cadastro enviado — aguardando aprovação ── */
+            <div style={{ textAlign: 'center', padding: '6px 0' }}>
+              <div style={{
+                width: 72, height: 72, margin: '0 auto 18px', borderRadius: 20,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(6,214,160,0.12)', color: '#06d6a0',
+                boxShadow: '0 0 28px -6px rgba(6,214,160,0.5)',
+              }}>
+                <CheckCircleIcon />
+              </div>
+              <h1 style={{ fontFamily: FONT_DISPLAY, margin: '0 0 10px', fontSize: 27, fontWeight: 700, color: '#f4f6fa', letterSpacing: '0.5px' }}>
+                Conta criada!
+              </h1>
+              <p style={{ margin: '0 0 18px', fontSize: 13, color: '#9ba6b6', lineHeight: 1.6 }}>
+                Seu cadastro foi enviado e está{' '}
+                <strong style={{ color: '#c8d0dc' }}>aguardando liberação do administrador</strong>.
+                Assim que aprovado, você poderá fazer login com seu usuário e senha.
+              </p>
+
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 8,
+                padding: '14px', borderRadius: 12, marginBottom: 18,
+                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#9ba6b6', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                  Quer agilizar a liberação?
+                </span>
+                <a href={SUPPORT_WHATSAPP} target="_blank" rel="noreferrer"
+                   style={{
+                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                     padding: '10px 14px', background: '#25D366', border: 'none', borderRadius: 8,
+                     color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                     textDecoration: 'none', transition: 'opacity 0.2s',
+                   }}
+                   onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88'; }}
+                   onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}>
+                  <WhatsAppIcon /> {SUPPORT_PHONE}
+                </a>
+              </div>
+
+              <button
+                onClick={goLogin}
+                style={{
+                  width: '100%', padding: '12px 20px', background: '#e63946', border: 'none',
+                  borderRadius: 10, color: '#fff', fontSize: 15, fontWeight: 700,
+                  letterSpacing: '2px', fontFamily: FONT_DISPLAY, cursor: 'pointer',
+                  boxShadow: '0 6px 24px rgba(230,57,70,0.38)',
+                }}
+              >
+                VOLTAR AO LOGIN
+              </button>
+            </div>
+          ) : view === 'register' ? (
+            /* ── Formulário de Cadastro ── */
+            <>
+              {/* Header */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 700, color: '#e63946', letterSpacing: '4px', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Novo na Apex
+                </div>
+                <h1 style={{ fontFamily: FONT_DISPLAY, margin: '0 0 6px', fontSize: 28, fontWeight: 700, color: '#f4f6fa', letterSpacing: '0.5px', lineHeight: 1.05 }}>
+                  Criar conta
+                </h1>
+                <p style={{ margin: 0, fontSize: 12.5, color: '#9ba6b6', lineHeight: 1.55 }}>
+                  Seu cadastro passa por <strong style={{ color: '#c8d0dc', fontWeight: 600 }}>aprovação do administrador</strong> antes de liberar o acesso.
+                </p>
+              </div>
+
+              {/* Aviso: rodando no navegador (sem Electron) */}
+              {!isElectron && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '11px 14px', borderRadius: 10, marginBottom: 16,
+                  background: 'rgba(17,138,178,0.10)', border: '1px solid rgba(17,138,178,0.35)', lineHeight: 1.55,
+                }}>
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>🖥️</span>
+                  <span style={{ fontSize: 12.5, color: '#9fc9dd' }}>
+                    <strong style={{ color: '#cfe8f4' }}>Modo visualização (navegador).</strong>{' '}
+                    O cadastro só funciona no aplicativo desktop <strong style={{ color: '#cfe8f4' }}>ApexDynamics</strong>.
+                  </span>
+                </div>
+              )}
+
+              {/* Mensagem erro/sucesso do cadastro */}
+              {regMsg && (
+                <div style={{
+                  padding: '9px 13px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                  marginBottom: 14, lineHeight: 1.5,
+                  background: regErr ? 'rgba(230,57,70,0.08)' : 'rgba(6,214,160,0.08)',
+                  color:      regErr ? '#e63946'               : '#06d6a0',
+                  border:     `1px solid ${regErr ? 'rgba(230,57,70,0.25)' : 'rgba(6,214,160,0.25)'}`,
+                }}>
+                  {regMsg}
+                </div>
+              )}
+
+              {regInput({ field: 'name',  label: 'Nome completo',       placeholder: 'Seu nome',            icon: <IdIcon />,    autoComplete: 'name',         maxLength: 80 })}
+              {regInput({ field: 'email', label: 'E-mail',              placeholder: 'voce@email.com',      icon: <MailIcon />,  type: 'email', autoComplete: 'email', maxLength: 120 })}
+              {regInput({ field: 'user',  label: 'Usuário',             placeholder: 'Nome de usuário',     icon: <UserIcon />,  maxLength: 64 })}
+              {regInput({ field: 'pass',  label: 'Senha',               placeholder: 'Mínimo 6 caracteres', icon: <LockIcon />,  type: 'password', autoComplete: 'new-password', maxLength: 128 })}
+              {regInput({ field: 'pass2', label: 'Confirmar senha',     placeholder: 'Repita a senha',      icon: <LockIcon />,  type: 'password', autoComplete: 'new-password', maxLength: 128 })}
+              {regInput({ field: 'phone', label: 'WhatsApp (opcional)', placeholder: '(11) 99999-9999',     icon: <PhoneIcon />, type: 'tel', autoComplete: 'tel', maxLength: 20 })}
+
+              {/* Aceite dos termos */}
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, cursor: 'pointer', userSelect: 'none', marginTop: 4, marginBottom: 18 }}>
+                <div
+                  onClick={() => setRegAccept((p) => !p)}
+                  style={{
+                    width: 16, height: 16, marginTop: 1, borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+                    background: regAccept ? '#e63946' : 'transparent',
+                    border: `2px solid ${regAccept ? '#e63946' : 'rgba(255,255,255,0.15)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                >
+                  {regAccept && (
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+                      <polyline points="2,6 5,9 10,3"/>
+                    </svg>
+                  )}
+                </div>
+                <span style={{ fontSize: 12.5, color: '#9ba6b6', lineHeight: 1.5 }}>
+                  Li e aceito os{' '}
+                  <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLegal('terms'); }} style={{ color: '#e63946', fontWeight: 600 }}>Termos de Uso</span>
+                  {' '}e a{' '}
+                  <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLegal('privacy'); }} style={{ color: '#e63946', fontWeight: 600 }}>Política de Privacidade</span>.
+                </span>
+              </label>
+
+              {/* Botão CRIAR CONTA */}
+              <button
+                className="apex-btn"
+                onClick={handleRegister}
+                disabled={regLoading}
+                style={{
+                  width: '100%', padding: '12px 20px', marginBottom: 16,
+                  background: regLoading ? 'rgba(255,255,255,0.04)' : '#e63946',
+                  border: `1px solid ${regLoading ? 'rgba(255,255,255,0.07)' : 'transparent'}`,
+                  borderRadius: 10, color: regLoading ? '#5a6473' : '#fff',
+                  fontSize: 16, fontWeight: 700, letterSpacing: '3px', fontFamily: FONT_DISPLAY,
+                  cursor: regLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  boxShadow: regLoading ? 'none' : '0 6px 24px rgba(230,57,70,0.38)',
+                  transition: 'background 0.2s, box-shadow 0.2s, color 0.2s, transform 0.1s',
+                }}
+              >
+                {regLoading
+                  ? <><div style={{ width: 17, height: 17, border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Enviando…</>
+                  : <><span>CRIAR CONTA</span><ArrowIcon /></>
+                }
+              </button>
+
+              {/* Voltar ao login */}
+              <div style={{ textAlign: 'center', fontSize: 13, color: '#9ba6b6' }}>
+                Já tem conta?{' '}
+                <button type="button" className="apex-link"
+                  onClick={goLogin}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 700 }}>
+                  Fazer login
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -732,6 +1058,16 @@ export default function LicenseGate({ children }) {
                   : <><span>ENTRAR</span><ArrowIcon /></>
                 }
               </button>
+
+              {/* Criar conta */}
+              <div style={{ textAlign: 'center', marginBottom: 20, fontSize: 13, color: '#9ba6b6' }}>
+                Ainda não tem acesso?{' '}
+                <button type="button" className="apex-link"
+                  onClick={goRegister}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e63946', fontFamily: FONT, padding: 0, fontWeight: 700 }}>
+                  Criar conta
+                </button>
+              </div>
 
               {/* Separador */}
               <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginBottom: 18 }} />
