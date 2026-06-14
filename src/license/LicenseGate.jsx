@@ -479,11 +479,14 @@ export default function LicenseGate({ children }) {
     const user  = reg.user.trim();
 
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    // Regra de senha alinhada ao servidor: 10+ caracteres com letra, número e símbolo.
+    const pass = reg.pass;
+    const passStrong = pass.length >= 10 && /[a-zA-Z]/.test(pass) && /[0-9]/.test(pass) && /[^a-zA-Z0-9]/.test(pass);
 
     if (name.length < 3)        { setRegMsg('Informe seu nome completo.');                 setRegErr(true); return; }
     if (!emailOk)               { setRegMsg('Informe um e-mail válido.');                  setRegErr(true); return; }
     if (user.length < 3)        { setRegMsg('O usuário deve ter ao menos 3 caracteres.');  setRegErr(true); return; }
-    if (reg.pass.length < 6)    { setRegMsg('A senha deve ter ao menos 6 caracteres.');    setRegErr(true); return; }
+    if (!passStrong)            { setRegMsg('A senha deve ter no mínimo 10 caracteres, com letra, número e símbolo (ex.: ! @ # $).'); setRegErr(true); return; }
     if (reg.pass !== reg.pass2) { setRegMsg('As senhas não coincidem.');                   setRegErr(true); return; }
     if (!regAccept)             { setRegMsg('É preciso aceitar os Termos de Uso e a Política de Privacidade.'); setRegErr(true); return; }
 
@@ -820,7 +823,7 @@ export default function LicenseGate({ children }) {
               {regInput({ field: 'name',  label: 'Nome completo',       placeholder: 'Seu nome',            icon: <IdIcon />,    autoComplete: 'name',         maxLength: 80 })}
               {regInput({ field: 'email', label: 'E-mail',              placeholder: 'voce@email.com',      icon: <MailIcon />,  type: 'email', autoComplete: 'email', maxLength: 120 })}
               {regInput({ field: 'user',  label: 'Usuário',             placeholder: 'Nome de usuário',     icon: <UserIcon />,  maxLength: 64 })}
-              {regInput({ field: 'pass',  label: 'Senha',               placeholder: 'Mínimo 6 caracteres', icon: <LockIcon />,  type: 'password', autoComplete: 'new-password', maxLength: 128 })}
+              {regInput({ field: 'pass',  label: 'Senha',               placeholder: '10+ com letra, nº e símbolo', icon: <LockIcon />,  type: 'password', autoComplete: 'new-password', maxLength: 128 })}
               {regInput({ field: 'pass2', label: 'Confirmar senha',     placeholder: 'Repita a senha',      icon: <LockIcon />,  type: 'password', autoComplete: 'new-password', maxLength: 128 })}
               {regInput({ field: 'phone', label: 'WhatsApp (opcional)', placeholder: '(11) 99999-9999',     icon: <PhoneIcon />, type: 'tel', autoComplete: 'tel', maxLength: 20 })}
 
