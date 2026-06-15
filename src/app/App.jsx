@@ -468,7 +468,14 @@ function AppInner() {
   }, []);
 
   /* ── Auth ────────────────────────────────────────────────────────── */
-  const handleLogout     = () => { localStorage.removeItem('rt_session'); window.location.reload(); };
+  const handleLogout     = async () => {
+    // Encerra a sessão no processo principal (para o SSE) e apaga a sessão
+    // criptografada (safeStorage); mantém o removeItem como fallback de navegador.
+    try { await window.electronAPI?.logout?.(); } catch { /* noop */ }
+    try { await window.electronAPI?.sessionClear?.(); } catch { /* noop */ }
+    try { localStorage.removeItem('rt_session'); } catch { /* noop */ }
+    window.location.reload();
+  };
   const handleNewSession = () => { clearData(); setPreparationMode(false); };
 
   /* ── Equipe: aplica medições aprovadas nos campos da tab correspondente */

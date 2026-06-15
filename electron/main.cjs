@@ -528,9 +528,10 @@ function createWindow() {
     show: false,
   });
 
-  if (!isDev) {
-    Menu.setApplicationMenu(null);
+  // Remove o menu nativo (File/Edit/View) em qualquer ambiente — visual limpo.
+  Menu.setApplicationMenu(null);
 
+  if (!isDev) {
     // Content-Security-Policy — só em produção (no dev o Vite/HMR precisa de
     // unsafe-eval + websocket, então não aplicamos pra não quebrar o hot-reload).
     win.webContents.session.webRequest.onHeadersReceived((details, callback) => {

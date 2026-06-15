@@ -46,6 +46,28 @@ export default function WorkspaceBar({
   const gearRef    = useRef(null);
   const createRef  = useRef(null);
 
+  // ApexID (apex_hash) do usuário logado — exibido no menu de configuração.
+  const [apexId, setApexId] = useState('');
+  const [apexCopied, setApexCopied] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = (await window.electronAPI?.sessionGet?.()) || null;
+        let hash = s?.apexHash;
+        if (!hash) { try { hash = JSON.parse(localStorage.getItem('rt_session') || 'null')?.apexHash; } catch { /* noop */ } }
+        if (hash) setApexId(hash);
+      } catch { /* noop */ }
+    })();
+  }, []);
+
+  const copyApexId = () => {
+    try {
+      navigator.clipboard?.writeText(apexId);
+      setApexCopied(true);
+      setTimeout(() => setApexCopied(false), 1500);
+    } catch { /* noop */ }
+  };
+
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
   // Close popup on outside click
@@ -347,6 +369,41 @@ export default function WorkspaceBar({
               boxShadow: COLORS.shadowPopup || '0 8px 28px rgba(0,0,0,0.7)',
             }}
           >
+            {/* ApexID do usuário logado */}
+            {apexId && (
+              <div style={{
+                marginBottom: 10, padding: '8px 10px', borderRadius: 8,
+                background: `${COLORS.accent}10`, border: `1px solid ${COLORS.accent}33`,
+              }}>
+                <div style={{
+                  fontSize: 9.5, color: COLORS.textMuted, fontWeight: 700,
+                  textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4,
+                }}>
+                  Seu ApexID
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    flex: 1, fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 12, fontWeight: 700, color: COLORS.accent, letterSpacing: '0.5px',
+                  }}>
+                    {apexId}
+                  </span>
+                  <button
+                    onClick={copyApexId}
+                    title="Copiar ApexID"
+                    style={{
+                      background: 'transparent', border: `1px solid ${COLORS.border}`,
+                      borderRadius: 5, color: apexCopied ? COLORS.green : COLORS.textMuted,
+                      fontSize: 10, fontWeight: 600, cursor: 'pointer', padding: '3px 7px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {apexCopied ? '✓ Copiado' : 'Copiar'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Workspace label */}
             <div
               style={{
