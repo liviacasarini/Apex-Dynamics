@@ -5,7 +5,7 @@
  *  1. Abertura → verifica certificado RS256 salvo localmente
  *  2. Certificado válido → acesso liberado (sem internet)
  *  3. Certificado expirado → tenta renovar via /api/auth/session-certificate
- *  4. Sem sessão → exibe formulário de login real (credenciais do ApexIdentityManager)
+ *  4. Sem sessão → exibe formulário de login/cadastro (credenciais do ApexServer)
  *
  * Sessão salva em localStorage (chave: rt_session):
  *  { certificate, token, username, apexHash, email, role }
@@ -173,13 +173,13 @@ function checkAndNotifyCertExpiry(payload) {
     const h = Math.ceil(hoursLeft);
     window.electronAPI.showNotification(
       '⏰ Licença expira em breve — ApexDynamics',
-      `Sua licença expira em ~${h}h. Abra o ApexIdentityManager para renovar.`
+      `Sua licença expira em ~${h}h. Abra o ApexDynamics conectado à internet para renovar automaticamente.`
     );
     sessionStorage.setItem(DEBOUNCE_KEY, '1');
   } else if (hoursLeft <= 25) {
     window.electronAPI.showNotification(
       '🔔 Licença expira amanhã — ApexDynamics',
-      'Sua licença vence em menos de 1 dia. Abra o ApexIdentityManager para renovar.'
+      'Sua licença vence em menos de 1 dia. Abra o ApexDynamics conectado à internet para renovar automaticamente.'
     );
     sessionStorage.setItem(DEBOUNCE_KEY, '1');
   }
@@ -897,8 +897,8 @@ export default function LicenseGate({ children }) {
                   Acesse sua equipe
                 </h1>
                 <p style={{ margin: 0, fontSize: 13, color: '#9ba6b6', lineHeight: 1.6 }}>
-                  Use suas credenciais cadastradas no{' '}
-                  <strong style={{ color: '#c8d0dc', fontWeight: 600 }}>Apex Identity Manager</strong>.
+                  Entre com seu usuário e senha do{' '}
+                  <strong style={{ color: '#c8d0dc', fontWeight: 600 }}>ApexDynamics</strong>.
                 </p>
               </div>
 
