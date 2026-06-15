@@ -1,17 +1,23 @@
 /**
- * ApexIdentityManager — Hardware ID Generator
+ * ApexDynamics — Hardware ID Generator
  *
  * Gera um identificador único e determinístico do hardware da máquina.
  *
- * Combina múltiplos identificadores do sistema:
- *  • Windows : Motherboard UUID + CPU ProcessorId + Disk Serial
+ * Combina identificadores ESTÁVEIS do sistema:
+ *  • Windows : MachineGuid (registro) — único por instalação do Windows,
+ *              sempre disponível, muda só ao reinstalar o SO. Fallback:
+ *              UUID da placa-mãe via CIM (substituto moderno do wmic).
  *  • macOS   : IOPlatformSerialNumber + IOPlatformUUID
  *  • Linux   : /etc/machine-id + product_uuid
  *
- * Fallback: hostname + CPU model + MAC address
+ * Fallback universal: hostname + modelo de CPU (NÃO usa MAC — endereço de
+ * rede muda com Wi-Fi/cabo/VPN e causaria HWID instável → lockout indevido).
  *
  * O resultado é um SHA-256 hex de todos os componentes concatenados.
  * O mesmo hardware sempre gera o mesmo HWID.
+ *
+ * NOTA: o Windows 11 removeu o `wmic`; por isso o coletor Windows usa
+ * `reg query` (MachineGuid) e `Get-CimInstance` em vez de `wmic`.
  */
 
 const { execSync } = require('child_process');
@@ -21,44 +27,57 @@ const os = require('os');
 const EXEC_OPTS = { encoding: 'utf8', timeout: 8000, windowsHide: true };
 
 /**
- * Extrai a primeira linha "útil" (não-vazia, sem o header) de uma saída WMIC.
+ * Lê um valor do registro do Windows via reg.exe (sempre presente, instantâneo).
+ * Retorna o valor (string) ou null.
  */
-function wmicValue(cmd) {
+function regQuery(key, value) {
   try {
-    const raw = execSync(cmd, EXEC_OPTS);
-    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    // Primeira linha é o header; segunda é o valor
-    return lines.length > 1 ? lines[1] : null;
+    const raw = execSync(`reg query "${key}" /v ${value}`, EXEC_OPTS);
+    // Linha: "    MachineGuid    REG_SZ    a1b2c3d4-...."
+    const m = raw.match(new RegExp(`${value}\\s+REG_\\w+\\s+(.+)`, 'i'));
+    return m ? m[1].trim() : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Coleta identificadores no Windows.
+ * Executa uma expressão PowerShell e retorna a saída (trim) ou null.
+ */
+function psQuery(expr) {
+  try {
+    const raw = execSync(
+      `powershell -NoProfile -NonInteractive -Command "${expr}"`,
+      EXEC_OPTS,
+    );
+    const v = raw.trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+/** UUID inválido reportado por alguns BIOS (tudo zero ou tudo F). */
+function isBogusUuid(u) {
+  const h = (u || '').replace(/[-\s]/g, '').toLowerCase();
+  return !h || /^0+$/.test(h) || /^f+$/.test(h);
+}
+
+/**
+ * Coleta identificadores no Windows (Win11-compatível, sem wmic).
+ * Prioriza o MachineGuid — estabilíssimo e sempre disponível.
  */
 function collectWindows() {
-  const parts = [];
+  // 1. MachineGuid do registro — identificador estável por instalação do SO.
+  const guid = regQuery('HKLM\\SOFTWARE\\Microsoft\\Cryptography', 'MachineGuid');
+  if (guid) return ['MGUID:' + guid];
 
-  // 1. Motherboard UUID (mais confiável)
-  const uuid = wmicValue('wmic csproduct get UUID');
-  if (uuid && !uuid.toLowerCase().includes('uuid')) parts.push('MB:' + uuid);
+  // 2. Fallback: UUID da placa-mãe via CIM (substituto do wmic).
+  const uuid = psQuery('(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID');
+  if (uuid && !isBogusUuid(uuid)) return ['MB:' + uuid];
 
-  // 2. CPU Processor ID
-  const cpuId = wmicValue('wmic cpu get ProcessorId');
-  if (cpuId && !cpuId.toLowerCase().includes('processorid')) parts.push('CPU:' + cpuId);
-
-  // 3. Disk Serial Number (primeiro disco)
-  const disk = wmicValue('wmic diskdrive get SerialNumber');
-  if (disk && !disk.toLowerCase().includes('serial')) parts.push('DISK:' + disk);
-
-  // 4. BIOS Serial (redundância)
-  const bios = wmicValue('wmic bios get SerialNumber');
-  if (bios && !bios.toLowerCase().includes('serial') && bios !== 'To Be Filled By O.E.M.') {
-    parts.push('BIOS:' + bios);
-  }
-
-  return parts;
+  // 3. Sem identificadores estáveis → cai no fallback universal.
+  return [];
 }
 
 /**
@@ -107,7 +126,9 @@ function collectLinux() {
 }
 
 /**
- * Fallback universal: hostname + CPU model + MAC address.
+ * Fallback universal: hostname + modelo de CPU.
+ * NÃO usa MAC — endereço de rede muda (Wi-Fi/cabo/VPN/adaptador USB) e
+ * tornaria o HWID instável, trancando usuários legítimos para fora.
  */
 function collectFallback() {
   const parts = [];
@@ -116,16 +137,6 @@ function collectFallback() {
 
   const cpus = os.cpus();
   if (cpus.length) parts.push('CPUMODEL:' + cpus[0].model);
-
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const iface of nets[name]) {
-      if (!iface.internal && iface.mac !== '00:00:00:00:00:00') {
-        parts.push('MAC:' + iface.mac);
-        return parts; // um MAC basta
-      }
-    }
-  }
 
   return parts;
 }
