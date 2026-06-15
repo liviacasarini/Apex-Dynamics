@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Versão do app */
   getVersion: () => ipcRenderer.invoke('get-version'),
 
+  /**
+   * Sessão criptografada via safeStorage (em userData, não no localStorage).
+   * sessionGet → objeto da sessão ou null; sessionSet(data) → persiste;
+   * sessionClear → remove.
+   */
+  sessionGet:   ()     => ipcRenderer.invoke('session:get'),
+  sessionSet:   (data) => ipcRenderer.invoke('session:set', data),
+  sessionClear: ()     => ipcRenderer.invoke('session:clear'),
+
   /** Abre diálogo de arquivo nativo */
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
 

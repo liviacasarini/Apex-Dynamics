@@ -220,9 +220,24 @@ function classifyBlock(result) {
   return null;
 }
 
-function saveSession(data) { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); }
-function loadSession()     { try { const r = localStorage.getItem(SESSION_KEY); return r ? JSON.parse(r) : null; } catch { return null; } }
-function clearSession()    { localStorage.removeItem(SESSION_KEY); }
+/**
+ * Sessão (certificado + token) guardada de forma criptografada pelo SO
+ * via Electron safeStorage (IPC session:get/set/clear), num arquivo em
+ * userData — não fica em texto puro no localStorage. Fora do Electron
+ * (modo navegador/visualização) cai no localStorage como fallback.
+ */
+async function saveSession(data) {
+  if (window.electronAPI?.sessionSet) { try { await window.electronAPI.sessionSet(data); return; } catch { /* fallthrough */ } }
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch { /* noop */ }
+}
+async function loadSession() {
+  if (window.electronAPI?.sessionGet) { try { return await window.electronAPI.sessionGet(); } catch { return null; } }
+  try { const r = localStorage.getItem(SESSION_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+}
+async function clearSession() {
+  if (window.electronAPI?.sessionClear) { try { await window.electronAPI.sessionClear(); return; } catch { /* fallthrough */ } }
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* noop */ }
+}
 
 /* ─── Componente Principal ───────────────────────────────────────────── */
 
@@ -276,7 +291,7 @@ export default function LicenseGate({ children }) {
         return;
       }
 
-      const session = loadSession();
+      const session = await loadSession();
 
       if (!session?.certificate) {
         setStatus('login');
@@ -304,7 +319,7 @@ export default function LicenseGate({ children }) {
           // Entitlements mudaram — busca novo certificado com as abas atualizadas
           const renewal = await window.electronAPI.requestCertificate(session.token);
           if (renewal.success && renewal.certificate) {
-            saveSession({ ...session, certificate: renewal.certificate });
+            await saveSession({ ...session, certificate: renewal.certificate });
             setEntitlements(parseCertEntitlements(renewal.certificate));
             setImportConfig(parseCertImportConfig(renewal.certificate));
             checkAndNotifyCertExpiry(check.payload);
@@ -324,7 +339,7 @@ export default function LicenseGate({ children }) {
         // Expirado → tenta renovar com o token salvo
         setStatus('renewing');
         if (!session.token) {
-          clearSession();
+          await clearSession();
           setStatus('login');
           setMessage('Sua sessão expirou. Faça login novamente.');
           setIsError(true);
@@ -343,7 +358,7 @@ export default function LicenseGate({ children }) {
 
         if (renewal.offline) {
           // Sem internet e certificado expirado → bloqueia
-          clearSession();
+          await clearSession();
           setStatus('login');
           setMessage('Certificado expirado. Conecte-se à internet para renovar.');
           setIsError(true);
@@ -353,14 +368,14 @@ export default function LicenseGate({ children }) {
         // Bloqueio que exige contato (banido, suspenso ou assinatura expirada)
         const renewBlock = classifyBlock(renewal);
         if (renewBlock) {
-          clearSession();
+          await clearSession();
           setBlock(renewBlock);
           setStatus('login');
           return;
         }
 
         // Token JWT expirado (>7 dias sem login) → força re-login
-        clearSession();
+        await clearSession();
         setStatus('login');
         setMessage('Sua licença expirou (7 dias). Faça login novamente.');
         setIsError(true);
@@ -368,21 +383,21 @@ export default function LicenseGate({ children }) {
       }
 
       // Certificado inválido (adulterado ou HWID errado)
-      clearSession();
+      await clearSession();
       setStatus('login');
     }
 
     // Registra listener para mudança de abas em tempo real (via SSE)
     // O main.cjs já renovou o certificado; salva e força remontagem do TabGate.
-    window.electronAPI?.onEntitlementsChanged?.((data) => {
+    window.electronAPI?.onEntitlementsChanged?.(async (data) => {
       if (data?.certificate) {
-        const currentSession = loadSession();
+        const currentSession = await loadSession();
         if (currentSession) {
-          saveSession({ ...currentSession, certificate: data.certificate });
+          await saveSession({ ...currentSession, certificate: data.certificate });
           setEntitlements(parseCertEntitlements(data.certificate));
           setImportConfig(parseCertImportConfig(data.certificate));
           // Incrementar entKey força remontagem do TabGate →
-          // ele relê os entitlements corretos do localStorage imediatamente.
+          // ele relê os entitlements corretos imediatamente.
           setEntKey(k => k + 1);
           console.log('[LicenseGate] entitlements atualizados via SSE');
         }
@@ -390,8 +405,8 @@ export default function LicenseGate({ children }) {
     });
 
     // Registra listener para ban em tempo real (via SSE)
-    window.electronAPI?.onForcedLogout?.((data) => {
-      clearSession();
+    window.electronAPI?.onForcedLogout?.(async (data) => {
+      await clearSession();
       const blk = classifyBlock({ banned: true, ...(data || {}) })
         || { title: 'Conta bloqueada', text: 'Seu acesso foi encerrado pelo administrador. Entre em contato pelo número abaixo.' };
       setBlock(blk);
@@ -423,8 +438,8 @@ export default function LicenseGate({ children }) {
       const result = await window.electronAPI.login(user, pass);
 
       if (result.success) {
-        // Salva sessão completa com certificado RS256
-        saveSession({
+        // Salva sessão completa com certificado RS256 (criptografada via safeStorage)
+        await saveSession({
           certificate: result.certificate || null,
           token:       result.token,
           username:    result.username || user,

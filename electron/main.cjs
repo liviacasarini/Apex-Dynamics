@@ -13,8 +13,9 @@
  *  5. Após 5 dias: requer internet para renovar ou bloqueia
  */
 
-const { app, BrowserWindow, Menu, ipcMain, Notification, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, Notification, dialog, safeStorage } = require('electron');
 const path   = require('path');
+const fs     = require('fs');
 const http   = require('http');
 const https  = require('https');
 const crypto = require('crypto');
@@ -520,6 +521,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       enableRemoteModule: false,
+      sandbox: true,
       devTools: isDev,
     },
     backgroundColor: '#07090f',
@@ -528,6 +530,24 @@ function createWindow() {
 
   if (!isDev) {
     Menu.setApplicationMenu(null);
+
+    // Content-Security-Policy — só em produção (no dev o Vite/HMR precisa de
+    // unsafe-eval + websocket, então não aplicamos pra não quebrar o hot-reload).
+    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; " +
+            "script-src 'self'; " +
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+            "font-src 'self' https://fonts.gstatic.com data:; " +
+            "img-src 'self' data: blob:; " +
+            "connect-src 'self' https://api.apexdynamics.store http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*;",
+          ],
+        },
+      });
+    });
   }
 
   if (isDev) {
@@ -588,6 +608,59 @@ function createWindow() {
     });
   }
 }
+
+/* ── IPC: Versão do app ────────────────────────────────────────────── */
+
+ipcMain.handle('get-version', () => app.getVersion());
+
+/* ── IPC: Sessão criptografada (safeStorage) ───────────────────────── */
+/**
+ * Guarda a sessão (certificado + token JWT) criptografada pela API do SO
+ * (DPAPI no Windows / Keychain no macOS / libsecret no Linux) num arquivo
+ * em userData — em vez de texto puro no localStorage do renderer.
+ * Se o SO não tiver criptografia disponível (raro), grava em texto puro
+ * como fallback para não travar o login.
+ */
+const SESSION_FILE = () => path.join(app.getPath('userData'), 'session.bin');
+
+ipcMain.handle('session:get', () => {
+  try {
+    const file = SESSION_FILE();
+    if (!fs.existsSync(file)) return null;
+    const raw = fs.readFileSync(file);
+    let json;
+    if (safeStorage.isEncryptionAvailable()) {
+      try { json = safeStorage.decryptString(raw); }
+      catch { json = raw.toString('utf8'); } // arquivo pode ter sido salvo em texto puro
+    } else {
+      json = raw.toString('utf8');
+    }
+    return JSON.parse(json);
+  } catch { return null; }
+});
+
+ipcMain.handle('session:set', (_event, data) => {
+  try {
+    const json = JSON.stringify(data);
+    const buf  = safeStorage.isEncryptionAvailable()
+      ? safeStorage.encryptString(json)
+      : Buffer.from(json, 'utf8');
+    fs.writeFileSync(SESSION_FILE(), buf, { mode: 0o600 });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('session:clear', () => {
+  try {
+    const file = SESSION_FILE();
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 /* ── IPC: HWID ─────────────────────────────────────────────────────── */
 
