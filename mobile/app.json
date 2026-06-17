@@ -1,5 +1,4 @@
-{
-  "expo": {
+{"expo": {
     "name": "Apex Dynamics",
     "slug": "apexdynamics-mobile",
     "version": "1.0.0",
@@ -37,13 +36,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Necessário para escanear QR code do desktop"
-        }
-      ],
-      [
-        "expo-barcode-scanner",
-        {
-          "cameraPermission": "Necessário para escanear QR code do desktop"
+          "cameraPermission": "NecessÃ¡rio para escanear QR code do desktop"
         }
       ],
       [

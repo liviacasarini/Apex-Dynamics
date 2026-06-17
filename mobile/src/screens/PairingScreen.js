@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useApp, COLORS } from '../context/AppContext';
 
 const ROLES = [
@@ -19,9 +19,9 @@ const ROLES = [
  */
 const StableScanner = memo(function StableScanner({ onScan }) {
   return (
-    <BarCodeScanner
-      onBarCodeScanned={onScan}
-      barCodeTypes={[BarCodeScanner.Constants.BarCodeType.qr]}
+    <CameraView
+      onBarcodeScanned={onScan}
+      barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
       style={StyleSheet.absoluteFillObject}
     />
   );
@@ -30,29 +30,22 @@ const StableScanner = memo(function StableScanner({ onScan }) {
 export default function PairingScreen() {
   const { connect, saveProfile, deviceName: savedName, deviceRole: savedRole } = useApp();
 
-  const [mode, setMode]                       = useState('qr');
-  const [hasCameraPermission, setHasCameraPermission] = useState(null);
-  const [serverUrl, setServerUrl]             = useState('');
-  const [name, setName]                       = useState(savedName || '');
-  const [role, setRole]                       = useState(savedRole || 'mecanico');
-  const [loading, setLoading]                 = useState(false);
-  const [statusMsg, setStatusMsg]             = useState('');
-  const [sessionName, setSessionName]         = useState('');
+  const [mode, setMode]                 = useState('qr');
+  const [permission, requestPermission] = useCameraPermissions();
+  const [serverUrl, setServerUrl]       = useState('');
+  const [name, setName]                 = useState(savedName || '');
+  const [role, setRole]                 = useState(savedRole || 'mecanico');
+  const [loading, setLoading]           = useState(false);
+  const [statusMsg, setStatusMsg]       = useState('');
+  const [sessionName, setSessionName]   = useState('');
+  const [pairingToken, setPairingToken] = useState('');
 
   // Ref para bloquear scans repetidos SEM causar re-render
   const lockedRef = useRef(false);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await BarCodeScanner.requestPermissionsAsync();
-        setHasCameraPermission(status === 'granted');
-      } catch (e) {
-        console.warn('Erro ao solicitar permissão de câmera:', e);
-        setHasCameraPermission(false);
-      }
-    })();
-  }, []);
+    requestPermission();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Callback 100% estável — deps vazias, usa refs/setters
   const handleScan = useCallback(({ data }) => {
@@ -62,7 +55,8 @@ export default function PairingScreen() {
       const parsed = JSON.parse(data);
       if (parsed.wsUrl) {
         setServerUrl(parsed.wsUrl);
-        if (parsed.sessionName) setSessionName(parsed.sessionName);
+        if (parsed.sessionName)  setSessionName(parsed.sessionName);
+        if (parsed.pairingToken) setPairingToken(parsed.pairingToken);
         setMode('manual');
         setStatusMsg('QR lido! Preencha seu nome e conecte.');
       } else {
@@ -90,7 +84,7 @@ export default function PairingScreen() {
     setStatusMsg('Conectando...');
     try {
       await saveProfile(name.trim(), role);
-      await connect(finalUrl, name.trim(), role, sessionName || undefined);
+      await connect(finalUrl, name.trim(), role, sessionName || undefined, pairingToken || undefined);
       setStatusMsg('Conectado!');
     } catch (e) {
       setStatusMsg('');
@@ -99,6 +93,10 @@ export default function PairingScreen() {
       setLoading(false);
     }
   }
+
+  const cameraGranted = permission?.granted === true;
+  const cameraLoading = permission === null;
+  const cameraDenied  = permission !== null && !permission.granted;
 
   /* ── Modo QR: layout fixo, câmera ocupa a tela, sem ScrollView ── */
   if (mode === 'qr') {
@@ -118,13 +116,13 @@ export default function PairingScreen() {
         </View>
 
         <View style={styles.cameraFull}>
-          {hasCameraPermission === null && (
+          {cameraLoading && (
             <View style={styles.cameraPlaceholder}>
               <ActivityIndicator color={COLORS.accent} size="large" />
               <Text style={styles.cameraMsg}>Solicitando permissão da câmera...</Text>
             </View>
           )}
-          {hasCameraPermission === false && (
+          {cameraDenied && (
             <View style={styles.cameraPlaceholder}>
               <Text style={styles.cameraMsg}>Permissão de câmera negada.</Text>
               <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('manual')}>
@@ -132,7 +130,7 @@ export default function PairingScreen() {
               </TouchableOpacity>
             </View>
           )}
-          {hasCameraPermission === true && (
+          {cameraGranted && (
             <>
               <StableScanner onScan={handleScan} />
               <View style={styles.scanOverlay} pointerEvents="none">

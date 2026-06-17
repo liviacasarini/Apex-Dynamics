@@ -135,6 +135,7 @@ export function AppProvider({ children }) {
   const [deviceName, setDeviceName] = useState('');
   const [deviceRole, setDeviceRole] = useState('mecanico');
   const [serverUrl, setServerUrl] = useState('');
+  const [pairingToken, setPairingToken] = useState('');
   const [sessionName, setSessionName] = useState('');
   const [messages, setMessages] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -180,9 +181,12 @@ export function AppProvider({ children }) {
       const url = serverUrl || await AsyncStorage.getItem('serverUrl');
       const did = deviceId || await AsyncStorage.getItem('deviceId');
       if (!url || !did) return;
+      const pToken = await AsyncStorage.getItem('pairingToken');
+      if (!pToken) return; // sem token de pareamento não há o que buscar
       const match = url.match(/\/\/([^:]+):(\d+)/);
       if (!match) return;
-      const httpUrl = `http://${match[1]}:8766/pending?deviceId=${encodeURIComponent(did)}`;
+      const httpUrl = `http://${match[1]}:8766/pending?deviceId=${encodeURIComponent(did)}`
+        + `&token=${encodeURIComponent(pToken)}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       const resp = await fetch(httpUrl, { signal: controller.signal });
@@ -221,17 +225,19 @@ export function AppProvider({ children }) {
     }
     setDeviceId(id);
 
-    const name = await AsyncStorage.getItem('deviceName');
-    const role = await AsyncStorage.getItem('deviceRole');
-    const url  = await AsyncStorage.getItem('serverUrl');
-    const sName = await AsyncStorage.getItem('sessionName');
+    const name   = await AsyncStorage.getItem('deviceName');
+    const role   = await AsyncStorage.getItem('deviceRole');
+    const url    = await AsyncStorage.getItem('serverUrl');
+    const sName  = await AsyncStorage.getItem('sessionName');
+    const pToken = await AsyncStorage.getItem('pairingToken');
 
-    if (name)  setDeviceName(name);
-    if (role)  setDeviceRole(role);
-    if (url)   setServerUrl(url);
-    if (sName) setSessionName(sName);
+    if (name)   setDeviceName(name);
+    if (role)   setDeviceRole(role);
+    if (url)    setServerUrl(url);
+    if (sName)  setSessionName(sName);
+    if (pToken) setPairingToken(pToken);
 
-    return { id, name, role, url };
+    return { id, name, role, url, pairingToken: pToken };
   }
 
   async function saveProfile(name, role) {
@@ -263,13 +269,14 @@ export function AppProvider({ children }) {
   /* ── Auto-reconexão silenciosa ─────────────────────────────────── */
   async function tryAutoConnect(url, name, role) {
     if (connected || connecting) return;
-    const useUrl  = url || await AsyncStorage.getItem('serverUrl');
-    const useName = name || await AsyncStorage.getItem('deviceName');
-    const useRole = role || await AsyncStorage.getItem('deviceRole') || 'mecanico';
+    const useUrl   = url || await AsyncStorage.getItem('serverUrl');
+    const useName  = name || await AsyncStorage.getItem('deviceName');
+    const useRole  = role || await AsyncStorage.getItem('deviceRole') || 'mecanico';
+    const useToken = await AsyncStorage.getItem('pairingToken');
     if (!useUrl || !useName) return;
     try {
       intentionalDisconnect.current = false;
-      await connect(useUrl, useName, useRole);
+      await connect(useUrl, useName, useRole, undefined, useToken);
     } catch {
       // silencioso — tenta novamente em 5s
       scheduleReconnect(useUrl, useName, useRole);
@@ -283,7 +290,7 @@ export function AppProvider({ children }) {
   }
 
   /* ── Conexão principal ─────────────────────────────────────────── */
-  const connect = useCallback(async (url, name, role, sName) => {
+  const connect = useCallback(async (url, name, role, sName, token) => {
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
@@ -299,6 +306,10 @@ export function AppProvider({ children }) {
     if (sName) {
       await AsyncStorage.setItem('sessionName', sName);
       setSessionName(sName);
+    }
+    if (token) {
+      await AsyncStorage.setItem('pairingToken', token);
+      setPairingToken(token);
     }
     setServerUrl(url);
     setConnecting(true);
@@ -319,11 +330,13 @@ export function AppProvider({ children }) {
           clearTimeout(timeout);
           setConnected(true);
           setConnecting(false);
+          const useToken = token || await AsyncStorage.getItem('pairingToken');
           ws.send(JSON.stringify({
             type: 'device:identify',
             deviceId: id, deviceName: useName, deviceRole: useRole,
             platform: 'mobile',
             pushToken: pushTokenRef.current || null,
+            pairingToken: useToken || null,
           }));
           startHeartbeat(id, useName, useRole);
           resolve(true);
@@ -361,6 +374,24 @@ export function AppProvider({ children }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleIncoming(msg) {
+    // ── Erro de autenticação (token inválido) ────────────────────────
+    if (msg.type === 'device:error' && msg.reason === 'invalid_token') {
+      intentionalDisconnect.current = true;
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      // Limpa token inválido — força re-pareamento com novo QR
+      AsyncStorage.removeItem('pairingToken');
+      AsyncStorage.removeItem('serverUrl');
+      AsyncStorage.removeItem('sessionName');
+      AsyncStorage.removeItem('assignedProfiles');
+      setPairingToken('');
+      setServerUrl('');
+      setSessionName('');
+      setAssignedProfiles([]);
+      setConnected(false);
+      setConnecting(false);
+      return;
+    }
+
     // ── Emergência ─────────────────────────────────────────────────────
     if (msg.type === 'emergency:alert') {
       setEmergencyAlert({ message: msg.message, timestamp: msg.timestamp, id: msg.id });
@@ -447,10 +478,12 @@ export function AppProvider({ children }) {
     await AsyncStorage.removeItem('serverUrl');
     await AsyncStorage.removeItem('sessionName');
     await AsyncStorage.removeItem('assignedProfiles');
+    await AsyncStorage.removeItem('pairingToken');
     setConnected(false);
     setConnecting(false);
     setServerUrl('');
     setSessionName('');
+    setPairingToken('');
     setMessages([]);
     setNotifications([]);
     setUnreadCount(0);

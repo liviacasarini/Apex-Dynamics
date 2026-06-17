@@ -14,7 +14,11 @@
  *   - Os .cjs (main, preload, hwid) é que continham lógica de licença/HWID
  *     legível dentro do app.asar. Ofuscar eleva muito a barreira de bypass.
  *
- * Uso:  npm run build:win:secure
+ * Uso:  npm run build:win:secure              (gera instalador local)
+ *       npm run release:win:secure            (ofusca + publica no GitHub)
+ *
+ * A flag --publish faz o electron-builder subir a release (--publish always),
+ * exigindo a env GH_TOKEN. Sem a flag, só gera o instalador em release/.
  *
  * IMPORTANTE: NÃO é proteção absoluta (Electron sempre é JS na máquina do
  * cliente), mas transforma "copiar e colar" em horas de engenharia reversa.
@@ -101,6 +105,7 @@ function obfuscateInPlace(obfuscator) {
 
 function main() {
   const obfuscator = loadObfuscator();
+  const publish = process.argv.includes('--publish');
 
   step('Buildando frontend (vite)...');
   execSync('npm run build:vite', { cwd: ROOT, stdio: 'inherit' });
@@ -114,9 +119,12 @@ function main() {
     step('Ofuscando electron/*.cjs...');
     obfuscateInPlace(obfuscator);
 
-    step('Empacotando instalador (electron-builder --win)...');
-    execSync('electron-builder --win', { cwd: ROOT, stdio: 'inherit' });
-    ok('Instalador gerado em release/');
+    const builderCmd = publish
+      ? 'electron-builder --win --publish always'
+      : 'electron-builder --win';
+    step(`Empacotando instalador (${builderCmd})...`);
+    execSync(builderCmd, { cwd: ROOT, stdio: 'inherit' });
+    ok(publish ? 'Instalador gerado e publicado no GitHub.' : 'Instalador gerado em release/');
   } finally {
     step('Restaurando electron/*.cjs originais...');
     restoreOriginals();

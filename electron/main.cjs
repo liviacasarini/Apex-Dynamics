@@ -44,6 +44,7 @@ const teamDevices   = new Map(); // deviceId → { ws, info }
 const pendingQueue  = new Map(); // deviceId → [msg, msg, ...] — mensagens para dispositivos offline
 const pushTokens    = new Map(); // deviceId → ExpoPushToken string
 let   sessionName   = 'Sessão ApexDynamics';
+let   pairingToken  = crypto.randomBytes(16).toString('hex'); // regenerado a cada inicialização
 
 /* ── Expo Push API — envia notificação real via Firebase/APNs ──── */
 function sendExpoPush(pushToken, title, body, data = {}, channelId = 'team', priority = 'high') {
@@ -150,6 +151,13 @@ function startTeamServer() {
 
         // Dispositivo se identifica ao conectar
         case 'device:identify': {
+          // Valida token de pareamento (dispositivos sem token são rejeitados)
+          if (msg.pairingToken !== pairingToken) {
+            wsSend(ws, { type: 'device:error', reason: 'invalid_token',
+              message: 'Token de pareamento inválido. Reescaneie o QR code.' });
+            setTimeout(() => ws.terminate(), 300);
+            return;
+          }
           deviceId = msg.deviceId || crypto.randomUUID();
           teamDevices.set(deviceId, { ws, info: {
             deviceId,
@@ -284,10 +292,16 @@ function startTeamHttpServer() {
 
     const url = new URL(req.url, `http://localhost:${TEAM_HTTP_PORT}`);
 
-    // GET /pending?deviceId=xxx — retorna e limpa mensagens pendentes
+    // GET /pending?deviceId=xxx&token=yyy — retorna e limpa mensagens pendentes.
+    // Exige o pairingToken da sessão (mesmo do QR/WebSocket) para impedir que
+    // outro dispositivo na LAN drene a fila de um device só sabendo o deviceId.
     if (req.method === 'GET' && url.pathname === '/pending') {
-      const did = url.searchParams.get('deviceId');
+      const did   = url.searchParams.get('deviceId');
+      const token = url.searchParams.get('token');
       if (!did) { res.writeHead(400); res.end('{"error":"deviceId required"}'); return; }
+      if (token !== pairingToken) {
+        res.writeHead(401); res.end('{"error":"invalid_token"}'); return;
+      }
       const msgs = pendingQueue.get(did) || [];
       pendingQueue.set(did, []); // limpa após entregar
       console.log('[HTTP] /pending for', did, '→', msgs.length, 'messages');
@@ -964,7 +978,7 @@ ipcMain.handle('license:validate', (_event, { apexHash, hwid }) => {
 ipcMain.handle('team:getServerInfo', async () => {
   const ip  = getLocalIP();
   const url = `ws://${ip}:${TEAM_WS_PORT}`;
-  const qrData = JSON.stringify({ wsUrl: url, sessionName });
+  const qrData = JSON.stringify({ wsUrl: url, sessionName, pairingToken });
   let qrDataUrl = null;
   try { qrDataUrl = await QRCode.toDataURL(qrData, { width: 300, margin: 2 }); } catch {}
   return {

@@ -15,6 +15,15 @@
 
 const ENT_KEY = 'rt_entitlements';
 
+/* Cópia AUTORITATIVA em memória, definida apenas a partir de um certificado
+ * RS256 já verificado pelo processo principal (assinatura conferida com a chave
+ * pública embutida). Uma vez definida nesta sessão, ela tem prioridade sobre o
+ * localStorage — assim, editar `rt_entitlements` no localStorage (ex.: via
+ * DevTools) NÃO concede acesso a abas não compradas. O LicenseGate chama
+ * setEntitlements com o cert verificado ANTES de renderizar o app, então o
+ * valor adulterado é sobrescrito em memória a cada abertura. */
+let _runtimeEnt = null;
+
 /* Coringa de acesso total e flag de modo desenvolvedor. */
 export const ALL_ACCESS = '*';
 export const DEV_FLAG   = '__dev__';
@@ -56,14 +65,21 @@ export function parseCertEntitlements(certificate) {
   return Array.isArray(ent) ? ent : [];
 }
 
-/** Salva os entitlements vigentes (chamado pelo LicenseGate ao validar sessão). */
+/** Salva os entitlements vigentes (chamado pelo LicenseGate ao validar sessão).
+ *  Define a cópia autoritativa em memória e persiste no localStorage (a memória
+ *  é a fonte de verdade durante a sessão; o localStorage é só persistência). */
 export function setEntitlements(arr) {
-  try { localStorage.setItem(ENT_KEY, JSON.stringify(Array.isArray(arr) ? arr : [])); }
+  const safe = Array.isArray(arr) ? arr : [];
+  _runtimeEnt = safe;
+  try { localStorage.setItem(ENT_KEY, JSON.stringify(safe)); }
   catch { /* noop */ }
 }
 
-/** Lê os entitlements vigentes. */
+/** Lê os entitlements vigentes. Prioriza a cópia em memória (derivada do cert
+ *  verificado nesta sessão); só recorre ao localStorage antes do LicenseGate
+ *  ter validado o certificado (janela em que nenhuma aba paga é renderizada). */
 export function getEntitlements() {
+  if (_runtimeEnt !== null) return _runtimeEnt;
   try {
     const raw = localStorage.getItem(ENT_KEY);
     const arr = raw ? JSON.parse(raw) : [];

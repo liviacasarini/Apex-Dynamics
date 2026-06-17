@@ -215,6 +215,16 @@ export const TAB_CATALOG = {
     ],
     price: null,
   },
+  telemetria: {
+    tagline: 'Os dados da moto ao vivo, volta após volta.',
+    what: 'Trará a telemetria em tempo real direto do datalogger da moto para a tela — velocidade, rotação, marcha, inclinação e canais vitais atualizados durante a sessão, sem esperar o fim para importar o arquivo.',
+    benefits: [
+      'Acompanhe a sessão acontecendo, não só o replay depois.',
+      'Identifique na hora se algum canal saiu do esperado.',
+      'Decisões de box com base no que está acontecendo agora.',
+    ],
+    price: null,
+  },
 };
 
 export function getTabCatalog(tabId) {
