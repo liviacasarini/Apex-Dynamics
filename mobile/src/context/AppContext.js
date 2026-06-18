@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useRef, useState, useEffect, useCallback } from 'react';
-import { AppState, Vibration, Platform } from 'react-native';
+import { AppState, Vibration, Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
@@ -330,13 +330,12 @@ export function AppProvider({ children }) {
           clearTimeout(timeout);
           setConnected(true);
           setConnecting(false);
-          const useToken = token || await AsyncStorage.getItem('pairingToken');
           ws.send(JSON.stringify({
             type: 'device:identify',
             deviceId: id, deviceName: useName, deviceRole: useRole,
             platform: 'mobile',
             pushToken: pushTokenRef.current || null,
-            pairingToken: useToken || null,
+            pairingToken: token || null,
           }));
           startHeartbeat(id, useName, useRole);
           resolve(true);
@@ -378,7 +377,6 @@ export function AppProvider({ children }) {
     if (msg.type === 'device:error' && msg.reason === 'invalid_token') {
       intentionalDisconnect.current = true;
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      // Limpa token inválido — força re-pareamento com novo QR
       AsyncStorage.removeItem('pairingToken');
       AsyncStorage.removeItem('serverUrl');
       AsyncStorage.removeItem('sessionName');
@@ -389,6 +387,11 @@ export function AppProvider({ children }) {
       setAssignedProfiles([]);
       setConnected(false);
       setConnecting(false);
+      Alert.alert(
+        'Sessão expirada',
+        'O desktop foi reiniciado ou a sessão mudou. Reescaneie o QR code para parear novamente.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
