@@ -97,6 +97,11 @@ input[type="number"] {
   50%      { opacity: 1; }
 }
 
+@keyframes chatToastIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
 @keyframes apexGlowSweep {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }

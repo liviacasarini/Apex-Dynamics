@@ -61,16 +61,14 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     sendChatMessage, approveMeasurement, dismissMeasurement, approveTimer,
     refreshServerInfo, markChatRead, senderNameRef,
     deviceAssignments, assignDeviceToProfile,
-    sendEmergency,
+    sendEmergency, typingUsers,
   } = useTeam();
 
   const [activeSection, setActiveSection] = useState('conexao');
   const [chatInput,     setChatInput]     = useState('');
-  const [chatMode,      setChatMode]      = useState('local'); // 'local' | 'cloud'
-  const [cloudMessages, setCloudMessages] = useState([]);
-  const [cloudChatInput, setCloudChatInput] = useState('');
-  const [cloudChatLoading, setCloudChatLoading] = useState(false);
+  const [chatSearch,    setChatSearch]    = useState('');
   const [senderName,    setSenderName]    = useState(senderNameRef.current);
+  const typingThrottle  = useRef(null);
   const [sessionInput,  setSessionInput]  = useState('');
   const [emergencyMsg,  setEmergencyMsg]  = useState('');
   const [emergencySent, setEmergencySent] = useState(false);
@@ -88,8 +86,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
   const [newSessionName,    setNewSessionName]    = useState('');
   const [sessionFeedback,   setSessionFeedback]   = useState('');
 
-  const chatEndRef      = useRef(null);
-  const cloudChatEndRef = useRef(null);
+  const chatEndRef = useRef(null);
 
   useEffect(() => {
     refreshServerInfo();
@@ -113,18 +110,6 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
       loadActiveSession();
     }
   }, [activeSection]);
-
-  useEffect(() => {
-    if (chatMode === 'cloud' && activeSection === 'chat') {
-      loadCloudMessages();
-    }
-  }, [chatMode, activeSection]);
-
-  useEffect(() => {
-    if (chatMode === 'cloud') {
-      setTimeout(() => cloudChatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-    }
-  }, [cloudMessages.length]);
 
   async function loadCloudOverview() {
     setCloudLoading(true);
@@ -158,18 +143,6 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     }
   }
 
-  async function loadCloudMessages() {
-    setCloudChatLoading(true);
-    try {
-      const res = await window.cloudTeamAPI?.getMessages();
-      setCloudMessages(Array.isArray(res?.messages ?? res) ? (res?.messages ?? res) : []);
-    } catch (e) {
-      console.error('Cloud messages error:', e);
-    } finally {
-      setCloudChatLoading(false);
-    }
-  }
-
   const handleSendChat = (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -177,17 +150,12 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     setChatInput('');
   };
 
-  const handleSendCloudChat = async (e) => {
-    e.preventDefault();
-    if (!cloudChatInput.trim()) return;
-    const text = cloudChatInput.trim();
-    setCloudChatInput('');
-    try {
-      await window.cloudTeamAPI?.sendMessage(text);
-      await loadCloudMessages();
-    } catch (e) {
-      console.error('Cloud send message error:', e);
-    }
+  const handleChatInputChange = (e) => {
+    setChatInput(e.target.value);
+    // Envia evento typing via WebSocket (throttle 2 s)
+    if (!e.target.value.trim() || typingThrottle.current) return;
+    window.teamAPI?.sendTypingEvent?.();
+    typingThrottle.current = setTimeout(() => { typingThrottle.current = null; }, 2000);
   };
 
   const handleApprove = (m) => {
@@ -528,146 +496,84 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
       )}
 
       {/* ─── Seção: Chat ─── */}
-      {activeSection === 'chat' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-          {/* Toggle Local / Nuvem */}
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[{ key: 'local', label: '📶 Local (Wi-Fi)' }, { key: 'cloud', label: '☁️ Nuvem' }].map(opt => (
-              <button key={opt.key} onClick={() => setChatMode(opt.key)} style={{
-                padding: '6px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                background: chatMode === opt.key ? `${C.blue}20` : 'transparent',
-                border: `1px solid ${chatMode === opt.key ? C.blue : C.border}`,
-                color: chatMode === opt.key ? C.blue : C.textSecondary,
-              }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Chat Local */}
-          {chatMode === 'local' && (
-            <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 480 }}>
-              <div style={theme.cardTitle}>💬 Chat da Equipe — Wi-Fi Local</div>
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-                gap: 8, padding: '4px 0', marginBottom: 12 }}>
-                {messages.length === 0 && (
-                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
-                    O chat da equipe aparecerá aqui.
-                  </div>
-                )}
-                {messages.map((msg, i) => {
-                  const isSystem = msg.type === 'chat:system';
-                  const isMe     = msg.from?.deviceId === 'desktop';
-                  if (isSystem) return (
-                    <div key={msg.id || i} style={{ textAlign: 'center', fontSize: 11,
-                      color: C.textMuted, fontStyle: 'italic', padding: '2px 0' }}>
-                      {msg.content?.text}
-                    </div>
-                  );
-                  return (
-                    <div key={msg.id || i} style={{
-                      display: 'flex', flexDirection: 'column',
-                      alignItems: isMe ? 'flex-end' : 'flex-start',
-                    }}>
-                      <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2, paddingLeft: 4 }}>
-                        {isMe ? 'Você' : msg.from?.name} · {fmtTs(msg.timestamp)}
-                      </div>
-                      <div style={{
-                        maxWidth: '75%', padding: '8px 12px', borderRadius: 10, fontSize: 13,
-                        background: isMe ? `${C.blue}25` : `${C.bgCard}`,
-                        border: `1px solid ${isMe ? C.blue + '40' : C.border + '44'}`,
-                        color: C.textPrimary,
-                      }}>
-                        {msg.content?.text}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={chatEndRef} />
-              </div>
-              <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  placeholder="Digite uma mensagem..."
-                  style={{ ...INPUT_STYLE, flex: 1 }}
-                />
-                <button type="submit" disabled={!chatInput.trim()} style={{
-                  padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
-                  background: chatInput.trim() ? C.blue : 'transparent',
-                  color: chatInput.trim() ? '#fff' : C.textMuted,
-                  border: `1px solid ${chatInput.trim() ? C.blue : C.border}`,
-                  cursor: chatInput.trim() ? 'pointer' : 'default',
-                }}>
-                  Enviar
-                </button>
-              </form>
+      {activeSection === 'chat' && (() => {
+        const typingNames = Object.values(typingUsers || {});
+        const filtered = chatSearch.trim()
+          ? messages.filter(m => m.content?.text?.toLowerCase().includes(chatSearch.toLowerCase()))
+          : messages;
+        return (
+          <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 540 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={theme.cardTitle}>💬 Chat da Equipe</div>
+              <input
+                value={chatSearch}
+                onChange={e => setChatSearch(e.target.value)}
+                placeholder="🔍 Buscar mensagem..."
+                style={{ ...INPUT_STYLE, width: 200, fontSize: 12, padding: '5px 10px' }}
+              />
             </div>
-          )}
-
-          {/* Chat Nuvem */}
-          {chatMode === 'cloud' && (
-            <div style={{ ...theme.card, display: 'flex', flexDirection: 'column', height: 480 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={theme.cardTitle}>☁️ Chat da Equipe — Nuvem</div>
-                <button onClick={loadCloudMessages} disabled={cloudChatLoading} style={{
-                  padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  background: 'transparent', color: C.textSecondary, border: `1px solid ${C.border}`,
-                }}>
-                  🔄 Atualizar
-                </button>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-                gap: 8, padding: '4px 0', marginBottom: 12 }}>
-                {cloudChatLoading && (
-                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
-                    Carregando mensagens...
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+              gap: 8, padding: '4px 0', marginBottom: 6 }}>
+              {filtered.length === 0 && (
+                <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
+                  {chatSearch.trim() ? 'Nenhuma mensagem encontrada.' : 'O chat da equipe aparecerá aqui.'}
+                </div>
+              )}
+              {filtered.map((msg, i) => {
+                const isSystem = msg.type === 'chat:system';
+                const isMe     = msg.from?.deviceId === 'desktop';
+                if (isSystem) return (
+                  <div key={msg.id || i} style={{ textAlign: 'center', fontSize: 11,
+                    color: C.textMuted, fontStyle: 'italic', padding: '2px 0' }}>
+                    {msg.content?.text}
                   </div>
-                )}
-                {!cloudChatLoading && cloudMessages.length === 0 && (
-                  <div style={{ textAlign: 'center', color: C.textMuted, fontSize: 12, padding: '24px 0' }}>
-                    Nenhuma mensagem na nuvem ainda.
-                  </div>
-                )}
-                {cloudMessages.map((msg, i) => (
+                );
+                return (
                   <div key={msg.id || i} style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: isMe ? 'flex-end' : 'flex-start',
                   }}>
                     <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2, paddingLeft: 4 }}>
-                      {msg.sender_username || msg.sender || 'Equipe'} · {fmtTs(msg.created_at || msg.timestamp)}
+                      {isMe ? 'Você' : msg.from?.name} · {fmtTs(msg.timestamp)}
                     </div>
                     <div style={{
                       maxWidth: '75%', padding: '8px 12px', borderRadius: 10, fontSize: 13,
-                      background: C.bgCard, border: `1px solid ${C.border}44`, color: C.textPrimary,
+                      background: isMe ? `${C.blue}25` : C.bgCard,
+                      border: `1px solid ${isMe ? C.blue + '40' : C.border + '44'}`,
+                      color: C.textPrimary,
                     }}>
-                      {msg.content}
+                      {msg.content?.text}
                     </div>
                   </div>
-                ))}
-                <div ref={cloudChatEndRef} />
-              </div>
-              <form onSubmit={handleSendCloudChat} style={{ display: 'flex', gap: 8 }}>
-                <input
-                  value={cloudChatInput}
-                  onChange={e => setCloudChatInput(e.target.value)}
-                  placeholder="Digite uma mensagem para a nuvem..."
-                  style={{ ...INPUT_STYLE, flex: 1 }}
-                />
-                <button type="submit" disabled={!cloudChatInput.trim()} style={{
-                  padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
-                  background: cloudChatInput.trim() ? C.blue : 'transparent',
-                  color: cloudChatInput.trim() ? '#fff' : C.textMuted,
-                  border: `1px solid ${cloudChatInput.trim() ? C.blue : C.border}`,
-                  cursor: cloudChatInput.trim() ? 'pointer' : 'default',
-                }}>
-                  Enviar
-                </button>
-              </form>
+                );
+              })}
+              <div ref={chatEndRef} />
             </div>
-          )}
-        </div>
-      )}
+            {typingNames.length > 0 && (
+              <div style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic', marginBottom: 6, paddingLeft: 2 }}>
+                ✏️ {typingNames.join(', ')} {typingNames.length === 1 ? 'está digitando...' : 'estão digitando...'}
+              </div>
+            )}
+            <form onSubmit={handleSendChat} style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={chatInput}
+                onChange={handleChatInputChange}
+                placeholder="Digite uma mensagem..."
+                style={{ ...INPUT_STYLE, flex: 1 }}
+              />
+              <button type="submit" disabled={!chatInput.trim()} style={{
+                padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700,
+                background: chatInput.trim() ? C.blue : 'transparent',
+                color: chatInput.trim() ? '#fff' : C.textMuted,
+                border: `1px solid ${chatInput.trim() ? C.blue : C.border}`,
+                cursor: chatInput.trim() ? 'pointer' : 'default',
+              }}>
+                Enviar
+              </button>
+            </form>
+          </div>
+        );
+      })()}
 
       {/* ─── Seção: Visão Geral (Cloud) ─── */}
       {activeSection === 'visao-geral' && (

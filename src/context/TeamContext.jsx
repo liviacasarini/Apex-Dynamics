@@ -21,15 +21,22 @@ export function TeamProvider({ children }) {
   const [unreadChat,        setUnreadChat]        = useState(0);
   const [teamTabOpen,       setTeamTabOpen]       = useState(false);
   const [deviceAssignments, setDeviceAssignments] = useState({}); // deviceId → [profileId, ...]
+  const [chatToast,         setChatToast]         = useState(null);
+  const [typingUsers,       setTypingUsers]       = useState({}); // deviceId → { name, expiresAt }
 
-  const senderNameRef = useRef('Engenheiro (Desktop)');
+  const senderNameRef   = useRef('Engenheiro (Desktop)');
+  const seenClientIds   = useRef(new Set()); // UUIDs de msgs LAN já adicionadas → evita duplicata do polling
+  const typingTimers    = useRef({});        // deviceId → clearTimeout handle
 
-  // Carrega info do servidor ao montar
+  // Carrega info do servidor e histórico de medições ao montar
   useEffect(() => {
     if (!window.teamAPI) return;
     window.teamAPI.getServerInfo().then(info => {
       setServerInfo(info);
       setDevices(info.devices || []);
+    });
+    window.teamAPI.loadMeasurements?.().then(res => {
+      if (res?.measurements?.length) setMeasurements(res.measurements);
     });
   }, []);
 
@@ -74,11 +81,65 @@ export function TeamProvider({ children }) {
           addSystemMessage(`⏱️ ${event.timer.deviceName} enviou cronômetro: ${event.timer.title} — ${formatTime(event.timer.totalTime)}`);
           break;
 
+        case 'chat:history': {
+          // Carga inicial do cloud — normaliza e popula estado (sem toast/unread)
+          const msgs = (event.messages || []).map(normalizeCloudMsg);
+          msgs.forEach(m => { if (m._clientId) seenClientIds.current.add(m._clientId); });
+          setMessages(msgs);
+          break;
+        }
+
+        case 'chat:cloudMessages': {
+          // Novas mensagens do polling — filtra as que já chegaram via LAN
+          const newMsgs = (event.messages || [])
+            .filter(m => !seenClientIds.current.has(m.client_id))
+            .map(normalizeCloudMsg);
+          if (newMsgs.length === 0) break;
+          newMsgs.forEach(m => { if (m._clientId) seenClientIds.current.add(m._clientId); });
+          setMessages(prev => {
+            const existing = new Set(prev.map(p => p.id));
+            const toAdd = newMsgs.filter(m => !existing.has(m.id));
+            return toAdd.length ? [...prev, ...toAdd].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) : prev;
+          });
+          newMsgs.forEach(m => {
+            setUnreadChat(prev => teamTabOpen ? 0 : prev + 1);
+            setChatToast({ senderName: m.from.name, preview: (m.content.text || '').slice(0, 60) });
+          });
+          break;
+        }
+
+        case 'chat:typing': {
+          const did  = event.from?.deviceId;
+          const name = event.from?.name || 'Alguém';
+          if (!did || did === 'desktop') break;
+          // Limpa timer anterior para este device
+          if (typingTimers.current[did]) clearTimeout(typingTimers.current[did]);
+          setTypingUsers(prev => ({ ...prev, [did]: name }));
+          // Remove após 3 s sem nova notificação
+          typingTimers.current[did] = setTimeout(() => {
+            setTypingUsers(prev => { const n = { ...prev }; delete n[did]; return n; });
+          }, 3000);
+          break;
+        }
+
         case 'chat:message':
+          // Limpa typing indicator de quem acabou de mandar mensagem
+          if (event.from?.deviceId) {
+            if (typingTimers.current[event.from.deviceId]) {
+              clearTimeout(typingTimers.current[event.from.deviceId]);
+              delete typingTimers.current[event.from.deviceId];
+            }
+            setTypingUsers(prev => { const n = { ...prev }; delete n[event.from.deviceId]; return n; });
+          }
           // Evita duplicar mensagens que o desktop já adicionou localmente
           if (event.from?.deviceId !== 'desktop') {
+            if (event.id) seenClientIds.current.add(event.id);
             setMessages(prev => [...prev, { ...event, receivedAt: new Date().toISOString() }]);
             setUnreadChat(prev => teamTabOpen ? 0 : prev + 1);
+            setChatToast({
+              senderName: event.from?.name || 'Equipe Mobile',
+              preview: (event.content?.text || '').slice(0, 60),
+            });
           }
           break;
 
@@ -88,6 +149,18 @@ export function TeamProvider({ children }) {
 
     return () => window.teamAPI.offEvent?.();
   }, [teamTabOpen]);
+
+  function normalizeCloudMsg(m) {
+    return {
+      type: 'chat:message',
+      id: `cloud-${m.id}`,
+      _clientId: m.client_id || null,
+      from: { deviceId: 'cloud', name: m.sender_name || 'Equipe', role: null, platform: 'cloud' },
+      timestamp: m.created_at,
+      content: { text: m.content },
+      receivedAt: m.created_at,
+    };
+  }
 
   function addSystemMessage(text) {
     setMessages(prev => [...prev, {
@@ -120,9 +193,22 @@ export function TeamProvider({ children }) {
   }, []);
 
   const approveMeasurement = useCallback(async (measurementId, deviceId) => {
-    setMeasurements(prev => prev.map(m =>
-      m.id === measurementId ? { ...m, status: 'approved', approvedAt: new Date().toISOString() } : m
-    ));
+    setMeasurements(prev => {
+      const found = prev.find(m => m.id === measurementId);
+      // Bridge: condições de pista para o cloud (não precisa de carId)
+      if (found?.category === 'temperature' || found?.label?.toLowerCase().includes('temperatura')) {
+        const d = found.data || {};
+        window.cloudTeamAPI?.saveTrackCond?.({
+          asphaltTemp: d.tempPista   ?? d.asphaltTemp ?? null,
+          airTemp:     d.tempAmbiente ?? d.airTemp    ?? null,
+          humidity:    d.umidade      ?? d.humidity   ?? null,
+          condition:   d.condicaoPista ?? d.condition ?? null,
+        }).catch?.(() => {});
+      }
+      return prev.map(m =>
+        m.id === measurementId ? { ...m, status: 'approved', approvedAt: new Date().toISOString() } : m
+      );
+    });
     await window.teamAPI?.approveMeasurement(measurementId, deviceId);
   }, []);
 
@@ -140,6 +226,13 @@ export function TeamProvider({ children }) {
     await window.teamAPI?.approveTimer(timerId, deviceId);
   }, []);
 
+  // Persiste histórico de medições em disco sempre que muda
+  useEffect(() => {
+    if (!window.teamAPI?.saveMeasurements) return;
+    if (measurements.length === 0) return;
+    window.teamAPI.saveMeasurements(measurements).catch(() => {});
+  }, [measurements]);
+
   const refreshServerInfo = useCallback(async () => {
     if (!window.teamAPI) return;
     const info = await window.teamAPI.getServerInfo();
@@ -148,6 +241,7 @@ export function TeamProvider({ children }) {
   }, []);
 
   const markChatRead = useCallback(() => setUnreadChat(0), []);
+  const dismissChatToast = useCallback(() => setChatToast(null), []);
 
   const assignDeviceToProfile = useCallback((deviceId, profileIds, profileNames) => {
     // profileIds = array de IDs, profileNames = array de nomes
@@ -182,6 +276,8 @@ export function TeamProvider({ children }) {
       teamTabOpen, setTeamTabOpen,
       sendChatMessage, approveMeasurement, dismissMeasurement, approveTimer,
       refreshServerInfo, markChatRead,
+      chatToast, dismissChatToast,
+      typingUsers,
       senderNameRef,
       deviceAssignments, assignDeviceToProfile,
       sendEmergency,
