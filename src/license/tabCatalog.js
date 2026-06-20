@@ -123,6 +123,16 @@ export const TAB_CATALOG = {
     ],
     price: 'R$ 400/carro/mês',
   },
+  replay: {
+    tagline: 'Compare dois vídeos onboard lado a lado, quadro a quadro.',
+    what: 'Player duplo de vídeo com controles individuais e controle universal sincronizado. Carregue dois vídeos (GoPro, celular, câmera de box) e analise o replay frame a frame com scrubber independente por câmera e controles de velocidade (0,5×, 1×, 2×, 5×, 10×).',
+    benefits: [
+      'Compara trajetórias de dois pilotos ou dois setups sem precisar carregar telemetria.',
+      'Controle universal sincroniza ambas as câmeras com um só clique ou a tecla Espaço.',
+      'Ideal para análise de onboarding rápida, briefings e apresentações ao piloto.',
+    ],
+    price: 'R$ 280/carro/mês',
+  },
   onboard: {
     tagline: 'Vídeo onboard + dados sincronizados, com sensor fusion.',
     what: 'Player duplo que analisa o vídeo GoPro lado a lado com os dados da sessão. Suporta 2 vídeos, mapas sincronizados e medidores de velocidade/rotação/marcha. Reconstitui a trajetória por sensor fusion independente (GPS + acelerômetro + giroscópio) — degrada graciosamente se faltar alguma fonte.',

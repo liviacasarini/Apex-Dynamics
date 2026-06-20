@@ -13,6 +13,7 @@ export { default as ProfilesTab     } from './profiles/ProfilesTab';
 export { default as MultiSessionTab } from './multi-session/MultiSessionTab';
 export { default as MecanicaTab     } from './mecanica/MecanicaTab';
 export { default as OnboardingTab   } from './onboard/OnboardingTab';
+export { default as ReplayTab       } from './replay/ReplayTab';
 export { default as MathTab         } from './math/MathTab';
 export { default as RegulamentacoesTab } from './regulamentacoes/RegulamentacoesTab';
 export { default as CombustivelTab  } from './combustivel/CombustivelTab';

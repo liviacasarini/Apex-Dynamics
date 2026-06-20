@@ -9,6 +9,7 @@ import { parseCSV } from '@/core/parsers/csvParser';
 import { detectChannels } from '@/core/channelDetector';
 import { Header, TabBar, WorkspaceBar } from '@/components/layout';
 import TabGate from '@/license/TabGate';
+import ChatToast from '@/components/ChatToast';
 import {
   OverviewTab,
   LapCompareTab,
@@ -25,6 +26,7 @@ import {
   MultiSessionTab,
   MecanicaTab,
   OnboardingTab,
+  ReplayTab,
   MathTab,
   RegulamentacoesTab,
   CombustivelTab,
@@ -861,6 +863,8 @@ function AppInner() {
             />
           )}
 
+          {activeTab === 'replay' && <ReplayTab />}
+
           {activeTab === 'math' && (
             <MathTab
               data={data} channels={channels}
@@ -971,6 +975,7 @@ function AppInner() {
         </main>
       </div>
     </div>
+    <ChatToast />
     </CarWeightProvider>
   );
 }

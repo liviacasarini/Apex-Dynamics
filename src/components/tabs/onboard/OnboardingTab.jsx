@@ -304,7 +304,7 @@ const VertBar = forwardRef(function VertBar({ label, color, COLORS }, ref) {
    Cada instância gerencia seu próprio vídeo, mapa, gauges e playback.
    ══════════════════════════════════════════════════════════════════════ */
 
-const OnboardingPanel = forwardRef(function OnboardingPanel({
+export const OnboardingPanel = forwardRef(function OnboardingPanel({
   selfManaged = false,
   externalData, externalChannels, externalLapsAnalysis, externalBestLapNum,
   externalVideoConfig, setExternalVideoConfig, externalIsLoaded,
@@ -312,6 +312,7 @@ const OnboardingPanel = forwardRef(function OnboardingPanel({
   label, accentColor,
   cleanMode = false,
   videoOnlyMode = false,
+  replayMode = false,
 }, ref) {
   const { colors: COLORS, isDark } = useTheme();
 
@@ -1185,7 +1186,7 @@ const OnboardingPanel = forwardRef(function OnboardingPanel({
         </div>
 
         {/* Botão de carregar / nome do arquivo (selfManaged) */}
-        {selfManaged && (
+        {selfManaged && !replayMode && (
           localFileName ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 10, color: COLORS.textMuted, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1235,7 +1236,7 @@ const OnboardingPanel = forwardRef(function OnboardingPanel({
         )}
 
         {/* Map color */}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
+        {!replayMode && <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
           {['speed','throttle','rpm'].map((k) => (
             <button key={k} onClick={() => setColorBy(k)} style={{
               background: colorBy === k ? COLORS.bgCardHover : 'transparent',
@@ -1246,7 +1247,7 @@ const OnboardingPanel = forwardRef(function OnboardingPanel({
               {{ speed: 'Vel', throttle: 'Acel', rpm: 'RPM' }[k]}
             </button>
           ))}
-        </div>
+        </div>}
       </div>}
 
       {/* ── Vídeo Player ── */}
