@@ -14,6 +14,21 @@ const smallBtn = (color) => ({
   cursor: 'pointer',
 });
 
+/**
+ * Tipo de veículo padrão ao abrir o diálogo de novo workspace.
+ *  - conta sem restrição (todos os tipos) → 'car'
+ *  - conta com UM único tipo permitido    → esse tipo (já vem selecionado)
+ *  - conta com vários tipos               → 'car' se permitido, senão o 1º permitido
+ * Nunca retorna um tipo que a conta não pode criar (evitava o erro
+ * "tipo de veículo 'car' não permitido para esta conta").
+ */
+function pickDefaultVehicle() {
+  const allowed = getAllowedVehicleTypes(); // null = todos os tipos
+  if (!allowed || allowed.length === 0) return 'car';
+  if (allowed.includes('car')) return 'car';
+  return allowed[0];
+}
+
 export default function WorkspaceBar({
   workspaces,
   activeWorkspaceId,
@@ -43,7 +58,7 @@ export default function WorkspaceBar({
   const [confirmDelete,  setConfirmDelete]  = useState(false);
   const [creating,       setCreating]       = useState(false);
   const [createVal,      setCreateVal]      = useState('');
-  const [createVehicle,  setCreateVehicle]  = useState('car');
+  const [createVehicle,  setCreateVehicle]  = useState(() => pickDefaultVehicle());
   const gearRef    = useRef(null);
   const createRef  = useRef(null);
 
@@ -108,7 +123,7 @@ export default function WorkspaceBar({
   const handleCreate = () => {
     setCreating(true);
     setCreateVal('');
-    setCreateVehicle('car');
+    setCreateVehicle(pickDefaultVehicle());
     setTimeout(() => createRef.current?.querySelector('input')?.focus(), 50);
   };
 
@@ -121,7 +136,7 @@ export default function WorkspaceBar({
     }
     setCreating(false);
     setCreateVal('');
-    setCreateVehicle('car');
+    setCreateVehicle(pickDefaultVehicle());
   };
 
   const startRename = () => {
