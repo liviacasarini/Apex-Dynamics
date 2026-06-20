@@ -438,7 +438,7 @@ export default function ProfilesTab({
               <div style={{ marginBottom: 12 }}>
                 {maxP !== null && (
                   <div style={{ fontSize: 10, color: atLimit ? COLORS.accent : COLORS.textMuted, marginBottom: 6, fontWeight: 600 }}>
-                    {profiles.length}/{maxP} perfil{maxP !== 1 ? 'is' : ''}
+                    {profiles.length}/{maxP} perfi{maxP !== 1 ? 's' : 'l'}
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 6 }}>
