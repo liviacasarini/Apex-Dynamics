@@ -131,7 +131,7 @@ export const TAB_CATALOG = {
       'Controle universal sincroniza ambas as câmeras com um só clique ou a tecla Espaço.',
       'Ideal para análise de onboarding rápida, briefings e apresentações ao piloto.',
     ],
-    price: 'R$ 280/carro/mês',
+    price: 'R$ 550/carro/mês',
   },
   onboard: {
     tagline: 'Vídeo onboard + dados sincronizados, com sensor fusion.',
