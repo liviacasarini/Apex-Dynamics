@@ -13,7 +13,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from '@/context/ThemeContext';
-import { setEntitlements, parseCertEntitlements } from '@/license/entitlements';
+import { setEntitlements, parseCertEntitlements, setWorkspaceConfig, parseCertWorkspaceConfig } from '@/license/entitlements';
 import { setImportConfig, parseCertImportConfig } from '@/license/importConfig';
 import { APEX_LEGAL } from '@/license/legalText';
 
@@ -322,6 +322,7 @@ export default function LicenseGate({ children }) {
             await saveSession({ ...session, certificate: renewal.certificate });
             setEntitlements(parseCertEntitlements(renewal.certificate));
             setImportConfig(parseCertImportConfig(renewal.certificate));
+            setWorkspaceConfig(parseCertWorkspaceConfig(renewal.certificate));
             checkAndNotifyCertExpiry(check.payload);
             setStatus('valid');
             return;
@@ -330,6 +331,7 @@ export default function LicenseGate({ children }) {
         // Sem mudança (ou offline) — usa o certificado atual
         setEntitlements(check.payload?.ent || []);
         setImportConfig(check.payload?.ic || null);
+        setWorkspaceConfig(check.payload?.wsc ?? null);
         checkAndNotifyCertExpiry(check.payload);
         setStatus('valid');
         return;
@@ -352,6 +354,7 @@ export default function LicenseGate({ children }) {
           saveSession({ ...session, certificate: renewal.certificate });
           setEntitlements(parseCertEntitlements(renewal.certificate));
           setImportConfig(parseCertImportConfig(renewal.certificate));
+          setWorkspaceConfig(parseCertWorkspaceConfig(renewal.certificate));
           setStatus('valid');
           return;
         }
@@ -396,6 +399,7 @@ export default function LicenseGate({ children }) {
           await saveSession({ ...currentSession, certificate: data.certificate });
           setEntitlements(parseCertEntitlements(data.certificate));
           setImportConfig(parseCertImportConfig(data.certificate));
+          setWorkspaceConfig(parseCertWorkspaceConfig(data.certificate));
           // Incrementar entKey força remontagem do TabGate →
           // ele relê os entitlements corretos imediatamente.
           setEntKey(k => k + 1);
@@ -449,6 +453,7 @@ export default function LicenseGate({ children }) {
         });
         setEntitlements(parseCertEntitlements(result.certificate));
         setImportConfig(parseCertImportConfig(result.certificate));
+        setWorkspaceConfig(parseCertWorkspaceConfig(result.certificate));
         setMessage('');
         setStatus('valid');
         return;

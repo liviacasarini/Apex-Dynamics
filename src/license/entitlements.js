@@ -121,3 +121,45 @@ export function isTabEditable(tabId) {
 export function hasTabRestriction() {
   return !hasAllAccess();
 }
+
+/* ── Workspace config ───────────────────────────────────────────────── */
+
+const WSC_KEY = 'rt_workspace_config';
+let _runtimeWsc = undefined; // undefined = ainda não inicializado
+
+/** Extrai workspace config do certificado RS256. */
+export function parseCertWorkspaceConfig(certificate) {
+  if (!certificate) return null;
+  try {
+    const part = certificate.split('.')[1];
+    if (!part) return null;
+    const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return payload?.wsc ?? null;
+  } catch { return null; }
+}
+
+/** Salva a workspace config (chamado pelo LicenseGate). */
+export function setWorkspaceConfig(cfg) {
+  _runtimeWsc = cfg ?? null;
+  try { localStorage.setItem(WSC_KEY, JSON.stringify(_runtimeWsc)); } catch { /* noop */ }
+}
+
+/** Lê a workspace config vigente. null = sem restrição. */
+export function getWorkspaceConfig() {
+  if (_runtimeWsc !== undefined) return _runtimeWsc;
+  try {
+    const raw = localStorage.getItem(WSC_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+/** Máximo de workspaces permitidos. null = ilimitado. */
+export function getMaxWorkspaces() {
+  return getWorkspaceConfig()?.max ?? null;
+}
+
+/** Tipos de veículo permitidos. null = todos. */
+export function getAllowedVehicleTypes() {
+  const types = getWorkspaceConfig()?.types;
+  return Array.isArray(types) && types.length > 0 ? types : null;
+}

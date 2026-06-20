@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useColors } from '@/context/ThemeContext';
 import { VEHICLE_TYPES } from '@/constants/tabs';
+import { getMaxWorkspaces, getAllowedVehicleTypes } from '@/license/entitlements';
 
 const smallBtn = (color) => ({
   flex: 1,
@@ -112,7 +113,12 @@ export default function WorkspaceBar({
   };
 
   const submitCreate = () => {
-    if (createVal.trim()) onCreate(createVal.trim(), createVehicle);
+    if (!createVal.trim()) return;
+    const result = onCreate(createVal.trim(), createVehicle);
+    if (result?.error) {
+      alert(result.error);
+      return;
+    }
     setCreating(false);
     setCreateVal('');
     setCreateVehicle('car');
@@ -237,7 +243,10 @@ export default function WorkspaceBar({
             ref={createRef}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px' }}
           >
-            {VEHICLE_TYPES.map((vt) => {
+            {VEHICLE_TYPES.filter(vt => {
+              const allowed = getAllowedVehicleTypes();
+              return !allowed || allowed.includes(vt.value);
+            }).map((vt) => {
               const sel = createVehicle === vt.value;
               return (
                 <button
@@ -297,41 +306,43 @@ export default function WorkspaceBar({
               }}
             >✕</button>
           </div>
-        ) : (
-          <div
-            onClick={handleCreate}
-            title="Novo workspace"
-            style={{
-              width: 26,
-              height: 26,
-              marginLeft: 4,
-              fontSize: 15,
-              lineHeight: 1,
-              cursor: 'pointer',
-              color: COLORS.textMuted,
-              border: `1px dashed ${COLORS.border}`,
-              borderRadius: 7,
-              userSelect: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'color 0.15s, border-color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = COLORS.accent;
-              e.currentTarget.style.borderColor = `${COLORS.accent}88`;
-              e.currentTarget.style.background = COLORS.accentSoft || `${COLORS.accent}12`;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = COLORS.textMuted;
-              e.currentTarget.style.borderColor = COLORS.border;
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            +
-          </div>
-        )}
+        ) : (() => {
+          const maxWs   = getMaxWorkspaces();
+          const atLimit = maxWs !== null && workspaces.length >= maxWs;
+          const tip     = atLimit
+            ? `Limite de ${maxWs} workspace${maxWs !== 1 ? 's' : ''} atingido`
+            : 'Novo workspace';
+          return (
+            <div
+              onClick={atLimit ? undefined : handleCreate}
+              title={tip}
+              style={{
+                width: 26, height: 26, marginLeft: 4, fontSize: 15, lineHeight: 1,
+                cursor: atLimit ? 'not-allowed' : 'pointer',
+                color: atLimit ? COLORS.textMuted : COLORS.textMuted,
+                border: `1px dashed ${atLimit ? COLORS.border + '55' : COLORS.border}`,
+                borderRadius: 7, userSelect: 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, opacity: atLimit ? 0.35 : 1,
+                transition: 'color 0.15s, border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (atLimit) return;
+                e.currentTarget.style.color = COLORS.accent;
+                e.currentTarget.style.borderColor = `${COLORS.accent}88`;
+                e.currentTarget.style.background = COLORS.accentSoft || `${COLORS.accent}12`;
+              }}
+              onMouseLeave={(e) => {
+                if (atLimit) return;
+                e.currentTarget.style.color = COLORS.textMuted;
+                e.currentTarget.style.borderColor = COLORS.border;
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              +
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Gear icon + popup ── */}

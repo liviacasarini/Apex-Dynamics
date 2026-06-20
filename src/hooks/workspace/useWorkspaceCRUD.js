@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_VITALS_LIMITS, DEFAULT_VITALS_LIMITS_TRUCK } from '@/constants/vitals';
+import { getMaxWorkspaces, getAllowedVehicleTypes } from '@/license/entitlements';
 
 function getDefaultVitals(vehicleType) {
   if (vehicleType === 'truck') return DEFAULT_VITALS_LIMITS_TRUCK;
@@ -16,16 +17,33 @@ export function createWorkspaceCRUD(update) {
   const createWorkspace = (name, vehicleType = 'car') => {
     const trimmed = name?.trim();
     if (!trimmed) return { error: 'Nome não pode ser vazio.' };
+
+    const allowedTypes = getAllowedVehicleTypes();
     const vt = ['car', 'moto', 'truck'].includes(vehicleType) ? vehicleType : 'car';
+    if (allowedTypes && !allowedTypes.includes(vt)) {
+      return { error: `Tipo de veículo "${vt}" não permitido para esta conta.` };
+    }
+
+    const maxWs = getMaxWorkspaces();
     const id = crypto.randomUUID();
-    update((prev) => ({
-      ...prev,
-      activeWorkspaceId: id,
-      workspaces: [
-        ...prev.workspaces,
-        { id, name: trimmed, vehicleType: vt, activeProfileId: null, activeTab: 'overview', vitalsLimits: getDefaultVitals(vt), savedReports: [], tempLog: [], tempSets: [], profiles: [] },
-      ],
-    }));
+    let blocked = null;
+
+    update((prev) => {
+      if (maxWs !== null && prev.workspaces.length >= maxWs) {
+        blocked = `Limite de ${maxWs} workspace${maxWs !== 1 ? 's' : ''} atingido.`;
+        return prev;
+      }
+      return {
+        ...prev,
+        activeWorkspaceId: id,
+        workspaces: [
+          ...prev.workspaces,
+          { id, name: trimmed, vehicleType: vt, activeProfileId: null, activeTab: 'overview', vitalsLimits: getDefaultVitals(vt), savedReports: [], tempLog: [], tempSets: [], profiles: [] },
+        ],
+      };
+    });
+
+    if (blocked) return { error: blocked };
     return { id };
   };
 
