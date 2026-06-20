@@ -163,3 +163,8 @@ export function getAllowedVehicleTypes() {
   const types = getWorkspaceConfig()?.types;
   return Array.isArray(types) && types.length > 0 ? types : null;
 }
+
+/** Máximo de perfis por workspace permitidos. null = ilimitado. */
+export function getMaxProfiles() {
+  return getWorkspaceConfig()?.mpc ?? null;
+}

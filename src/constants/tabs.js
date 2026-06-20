@@ -8,7 +8,7 @@ export const CAR_TABS = [
   { id: 'temperature', label: 'Temperaturas',      icon: '🌡️' },
   { id: 'pneus',       label: 'Pneus',             icon: '⚫' },
   { id: 'setup',       label: 'Setup Sheet',       icon: '📄' },
-  { id: 'profiles',     label: 'Carros',            icon: '🏎️' },
+  { id: 'profiles',     label: 'Perfil',            icon: '🏎️' },
   { id: 'multisession', label: 'Multi-Sessão',      icon: '📊' },
   { id: 'mecanica',    label: 'Inventário',          icon: '⚙️' },
   { id: 'onboard',    label: 'Onboarding',         icon: '🎬' },

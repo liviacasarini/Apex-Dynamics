@@ -10,6 +10,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useColors } from '@/context/ThemeContext';
 import { makeTheme } from '@/styles/theme';
 import { PrintFooter } from '@/components/common';
+import { getMaxProfiles } from '@/license/entitlements';
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -430,20 +431,32 @@ export default function ProfilesTab({
           <div style={theme.cardTitle}>Perfis</div>
 
           {/* Criar novo */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => { setNewName(e.target.value); setNewNameErr(null); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                placeholder="Nome do novo perfil..."
-                style={{ ...INPUT_S, flex: 1 }}
-              />
-              <button onClick={handleCreate} style={BTN(true)}>+ Criar</button>
-            </div>
-            {newNameErr && <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 4 }}>{newNameErr}</div>}
-          </div>
+          {(() => {
+            const maxP    = getMaxProfiles();
+            const atLimit = maxP !== null && profiles.length >= maxP;
+            return (
+              <div style={{ marginBottom: 12 }}>
+                {maxP !== null && (
+                  <div style={{ fontSize: 10, color: atLimit ? COLORS.accent : COLORS.textMuted, marginBottom: 6, fontWeight: 600 }}>
+                    {profiles.length}/{maxP} perfil{maxP !== 1 ? 'is' : ''}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => { setNewName(e.target.value); setNewNameErr(null); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                    placeholder="Nome do novo perfil..."
+                    style={{ ...INPUT_S, flex: 1, opacity: atLimit ? 0.5 : 1 }}
+                    disabled={atLimit}
+                  />
+                  <button onClick={handleCreate} disabled={atLimit} style={{ ...BTN(true), opacity: atLimit ? 0.4 : 1, cursor: atLimit ? 'not-allowed' : 'pointer' }}>+ Criar</button>
+                </div>
+                {newNameErr && <div style={{ fontSize: 11, color: COLORS.accent, marginTop: 4 }}>{newNameErr}</div>}
+              </div>
+            );
+          })()}
 
           {/* Lista */}
           {profiles.length === 0 ? (

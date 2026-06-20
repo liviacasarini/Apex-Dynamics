@@ -5,19 +5,32 @@
  * Pure function — no React hooks inside.
  */
 
+import { getMaxProfiles } from '@/license/entitlements';
+
 export function createProfileCRUD(updateWS) {
   const createProfile = (name) => {
     const trimmed = name?.trim();
     if (!trimmed) return { error: 'Nome do perfil não pode ser vazio.' };
+    const maxP = getMaxProfiles();
     const id = crypto.randomUUID();
-    updateWS((w) => ({
-      ...w,
-      activeProfileId: id,
-      profiles: [
-        ...w.profiles,
-        { id, name: trimmed, createdAt: new Date().toISOString(), setups: [], tireSets: [], groups: [], parts: [], customPartCategories: [], mechanicSnapshots: [] },
-      ],
-    }));
+    let blocked = null;
+
+    updateWS((w) => {
+      if (maxP !== null && w.profiles.length >= maxP) {
+        blocked = `Limite de ${maxP} perfil${maxP !== 1 ? 'is' : ''} atingido.`;
+        return w;
+      }
+      return {
+        ...w,
+        activeProfileId: id,
+        profiles: [
+          ...w.profiles,
+          { id, name: trimmed, createdAt: new Date().toISOString(), setups: [], tireSets: [], groups: [], parts: [], customPartCategories: [], mechanicSnapshots: [] },
+        ],
+      };
+    });
+
+    if (blocked) return { error: blocked };
     return { id };
   };
 
