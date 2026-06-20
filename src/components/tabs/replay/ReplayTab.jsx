@@ -139,6 +139,10 @@ export default function ReplayTab() {
             style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 14px' }}>
             ◀ 5s
           </button>
+          <button onClick={() => globalSeek(-1)} title="−1s"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 12px' }}>
+            ◀ 1s
+          </button>
 
           <button
             onClick={globalToggle}
@@ -156,6 +160,10 @@ export default function ReplayTab() {
             {globalPlaying ? '⏸' : '▶'}
           </button>
 
+          <button onClick={() => globalSeek(1)} title="+1s"
+            style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 12px' }}>
+            1s ▶
+          </button>
           <button onClick={() => globalSeek(5)} title="+5s (→)"
             style={{ ...globalBtnStyle(COLORS), fontSize: 13, padding: '8px 14px' }}>
             5s ▶
