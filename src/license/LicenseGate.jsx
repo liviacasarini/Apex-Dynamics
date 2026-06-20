@@ -310,10 +310,11 @@ export default function LicenseGate({ children }) {
 
         // Verifica online se abas OU import_config mudaram desde a emissão do cert.
         // Passa o token explicitamente pois sessionToken no main pode ainda ser null.
-        const certEv  = check.payload?.ev ?? -1;
-        const certIcv = check.payload?.icv ?? -1;
+        const certEv   = check.payload?.ev   ?? -1;
+        const certIcv  = check.payload?.icv  ?? -1;
+        const certWscv = check.payload?.wscv ?? -1;
         const statusRes = await window.electronAPI
-          .checkCertStatus(certEv, session.token, certIcv).catch(() => null);
+          .checkCertStatus(certEv, session.token, certIcv, certWscv).catch(() => null);
 
         if (statusRes?.success && statusRes.changed && session.token) {
           // Entitlements mudaram — busca novo certificado com as abas atualizadas

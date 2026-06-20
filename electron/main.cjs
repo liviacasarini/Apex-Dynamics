@@ -1088,15 +1088,14 @@ ipcMain.handle('license:resumeSession', async (_event, { token, hwid }) => {
 });
 
 /* ── IPC: Verificar versão de entitlements (cert-status) ───────────── */
-ipcMain.handle('license:checkCertStatus', async (_event, { ev, token, icv }) => {
+ipcMain.handle('license:checkCertStatus', async (_event, { ev, token, icv, wscv }) => {
   try {
-    // Usa o token passado explicitamente (reabertura sem login)
-    // ou o sessionToken global (após login normal).
     const authToken = token || sessionToken;
     if (!authToken) return { success: false, changed: false };
-    const res = await httpsGet(`/api/auth/cert-status?ev=${ev ?? -1}&icv=${icv ?? -1}`, {
-      Authorization: `Bearer ${authToken}`,
-    });
+    const res = await httpsGet(
+      `/api/auth/cert-status?ev=${ev ?? -1}&icv=${icv ?? -1}&wscv=${wscv ?? -1}`,
+      { Authorization: `Bearer ${authToken}` }
+    );
     if (!res.ok) return { success: false, changed: false, offline: res.offline };
     return { success: true, ...res.data };
   } catch {

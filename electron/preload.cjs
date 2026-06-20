@@ -71,8 +71,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Verifica junto ao servidor se o ev (entitlements_version) do certificado local
    * ainda é igual ao do banco. Se mudou, o app deve renovar o certificado.
    */
-  checkCertStatus: (ev, token, icv) =>
-    ipcRenderer.invoke('license:checkCertStatus', { ev, token, icv }),
+  checkCertStatus: (ev, token, icv, wscv) =>
+    ipcRenderer.invoke('license:checkCertStatus', { ev, token, icv, wscv }),
 
   resumeSession: (token, hwid) =>
     ipcRenderer.invoke('license:resumeSession', { token, hwid }),
@@ -155,6 +155,13 @@ contextBridge.exposeInMainWorld('teamAPI', {
   /** Para o servidor WebSocket */
   stopServer: () => ipcRenderer.invoke('team:stopServer'),
 
+  /** Persiste e restaura histórico de medições entre sessões */
+  saveMeasurements: (data) => ipcRenderer.invoke('team:saveMeasurements', data),
+  loadMeasurements: ()     => ipcRenderer.invoke('team:loadMeasurements'),
+
+  /** Informa ao servidor que o desktop está digitando (typing indicator) */
+  sendTypingEvent: () => ipcRenderer.invoke('team:sendTypingEvent'),
+
   /**
    * Registra callback para eventos de equipe em tempo real.
    * Eventos: team:deviceJoined, team:deviceLeft, team:devicesUpdate,
@@ -181,4 +188,5 @@ contextBridge.exposeInMainWorld('cloudTeamAPI', {
   endSession:        (id)         => ipcRenderer.invoke('cloud:endSession', { id }),
   getLatestCarData:  ()           => ipcRenderer.invoke('cloud:getLatestCarData'),
   getLatestTrackCond:()           => ipcRenderer.invoke('cloud:getLatestTrackCond'),
+  saveTrackCond:     (data)       => ipcRenderer.invoke('cloud:saveTrackCond', data),
 });
