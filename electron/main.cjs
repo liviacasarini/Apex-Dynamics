@@ -39,6 +39,49 @@ let sseStopped        = false; // true quando parado intencionalmente (ban / log
 let chatPollTimer   = null;
 let lastChatPollAt  = null; // ISO string da última mensagem vista no cloud
 
+/* ── Polling de versão de workspace config (wsc) ─────────────────── */
+let wscPollTimer    = null;
+let lastCertVersions = { ev: -1, icv: -1, wscv: -1 };
+
+/** Extrai versões (ev, icv, wscv) do payload do cert RS256 (sem verificar assinatura). */
+function updateLastCertVersions(certificate) {
+  try {
+    const part = certificate?.split('.')[1];
+    if (!part) return;
+    const json = Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+    const payload = JSON.parse(json);
+    lastCertVersions = {
+      ev:   payload?.ev   ?? -1,
+      icv:  payload?.icv  ?? -1,
+      wscv: payload?.wscv ?? -1,
+    };
+  } catch { /* noop */ }
+}
+
+async function pollCertStatus() {
+  if (!sessionToken) return;
+  try {
+    const { ev, icv, wscv } = lastCertVersions;
+    const res = await httpsGet(
+      `/api/auth/cert-status?ev=${ev}&icv=${icv}&wscv=${wscv}`,
+      { Authorization: `Bearer ${sessionToken}` }
+    );
+    if (res.ok && res.data?.changed) {
+      console.log('[wsc-poll] mudança detectada — renovando certificado');
+      await refreshCertificateBackground();
+    }
+  } catch { /* noop */ }
+}
+
+function startWscPolling() {
+  stopWscPolling();
+  wscPollTimer = setInterval(pollCertStatus, 60_000);
+}
+
+function stopWscPolling() {
+  if (wscPollTimer) { clearInterval(wscPollTimer); wscPollTimer = null; }
+}
+
 /* ── Estado do servidor de equipe (WebSocket local) ──────────────── */
 const TEAM_WS_PORT  = 8765;
 const TEAM_HTTP_PORT = 8766;
@@ -899,9 +942,11 @@ ipcMain.handle('license:login', async (_event, { username, password }) => {
     sessionToken = loginData.token;
     sessionHwid  = hwid;
     startSSE();
-    await registerRelayToken(); // await garante que o token está no servidor antes do mobile escanear
+    await registerRelayToken();
     loadChatHistory();
     startChatPolling();
+    if (certificate) updateLastCertVersions(certificate);
+    startWscPolling();
 
     return {
       ...loginData,
@@ -1057,6 +1102,7 @@ ipcMain.handle('license:requestCertificate', async (_event, { token }) => {
       return { success: false, message: data.message, banned, offline: false };
     }
 
+    updateLastCertVersions(data.certificate);
     return { success: true, certificate: data.certificate };
   } catch {
     return { success: false, message: 'Erro ao solicitar certificado.', offline: false };
@@ -1069,16 +1115,18 @@ ipcMain.handle('license:requestCertificate', async (_event, { token }) => {
  * (sem passar pelo fluxo de login). Define sessionToken + sessionHwid e inicia
  * o canal SSE — necessário para notificações em tempo real (entitlements, ban).
  */
-ipcMain.handle('license:resumeSession', async (_event, { token, hwid }) => {
+ipcMain.handle('license:resumeSession', async (_event, { token, hwid, certificate }) => {
   try {
     if (!token || !hwid) return { success: false };
     sessionToken = token;
     sessionHwid  = hwid;
     sseStopped   = false;
+    if (certificate) updateLastCertVersions(certificate);
     startSSE();
     await registerRelayToken();
     loadChatHistory();
     startChatPolling();
+    startWscPolling();
     console.log('[resumeSession] sessão retomada, SSE e chat cloud iniciados');
     return { success: true };
   } catch (err) {
@@ -1113,7 +1161,7 @@ async function refreshCertificateBackground() {
       { Authorization: `Bearer ${sessionToken}` }
     );
     if (res.ok && res.data?.success && res.data?.certificate) {
-      // Notifica o renderer para salvar o novo certificado e recarregar as abas
+      updateLastCertVersions(res.data.certificate);
       mainWindow?.webContents.send('license:entitlementsChanged', {
         certificate: res.data.certificate,
       });
@@ -1130,7 +1178,9 @@ ipcMain.handle('license:logout', () => {
   sseStopped = true;
   stopSSE();
   stopChatPolling();
+  stopWscPolling();
   lastChatPollAt = null;
+  lastCertVersions = { ev: -1, icv: -1, wscv: -1 };
   sessionToken = null;
   sessionHwid  = null;
   return { success: true };

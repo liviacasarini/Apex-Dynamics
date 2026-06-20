@@ -74,8 +74,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkCertStatus: (ev, token, icv, wscv) =>
     ipcRenderer.invoke('license:checkCertStatus', { ev, token, icv, wscv }),
 
-  resumeSession: (token, hwid) =>
-    ipcRenderer.invoke('license:resumeSession', { token, hwid }),
+  resumeSession: (token, hwid, certificate) =>
+    ipcRenderer.invoke('license:resumeSession', { token, hwid, certificate }),
 
   /**
    * Registra callback para ser chamado quando o servidor notificar mudança de abas

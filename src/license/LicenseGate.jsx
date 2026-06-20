@@ -305,7 +305,7 @@ export default function LicenseGate({ children }) {
         // Retoma sessão no processo principal (define token + hwid + inicia SSE).
         // Necessário porque ao abrir com cert válido o login é ignorado.
         if (session.token && check.payload?.hwid) {
-          window.electronAPI.resumeSession(session.token, check.payload.hwid).catch(() => {});
+          window.electronAPI.resumeSession(session.token, check.payload.hwid, session.certificate).catch(() => {});
         }
 
         // Verifica online se abas OU import_config mudaram desde a emissão do cert.
