@@ -75,7 +75,7 @@ async function pollCertStatus() {
 
 function startWscPolling() {
   stopWscPolling();
-  wscPollTimer = setInterval(pollCertStatus, 60_000);
+  wscPollTimer = setInterval(pollCertStatus, 15_000);
 }
 
 function stopWscPolling() {
