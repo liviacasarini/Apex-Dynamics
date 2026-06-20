@@ -75,7 +75,9 @@ async function pollCertStatus() {
 
 function startWscPolling() {
   stopWscPolling();
-  wscPollTimer = setInterval(pollCertStatus, 15_000);
+  // FALLBACK (5 min) — o tempo real agora vem via SSE (`wsc_changed`,
+  // `entitlements_changed`, `import_config_changed`); este poll só cobre gaps.
+  wscPollTimer = setInterval(pollCertStatus, 300_000);
 }
 
 function stopWscPolling() {
@@ -652,10 +654,19 @@ function startSSE() {
             stopSSE();
             mainWindow?.webContents.send('license:forcedLogout', { reason: 'banned' });
           }
-          if (payload.type === 'entitlements_changed' || payload.type === 'import_config_changed') {
-            // Admin mudou abas ou config de importação — renova o certificado
-            // imediatamente para aplicar sem o cliente reiniciar.
+          if (payload.type === 'entitlements_changed' || payload.type === 'import_config_changed' || payload.type === 'wsc_changed') {
+            // Admin mudou abas, config de importação ou limites de workspace —
+            // renova o certificado imediatamente para aplicar sem reiniciar.
             refreshCertificateBackground();
+          }
+          if (payload.type === 'chat_message' && payload.message) {
+            // Mensagem de chat empurrada em tempo real (substitui o polling).
+            // Reusa o mesmo caminho do polling — o renderer deduplica por id/client_id.
+            mainWindow?.webContents.send('team:event', {
+              type: 'chat:cloudMessages',
+              messages: [payload.message],
+            });
+            lastChatPollAt = payload.message.created_at || lastChatPollAt;
           }
         } catch { /* ignora linhas mal formadas */ }
       }
@@ -711,7 +722,8 @@ async function loadChatHistory() {
   } catch { /* silencioso */ }
 }
 
-/** Inicia polling de novas mensagens cloud a cada 15 s. */
+/** Inicia polling de novas mensagens cloud a cada 90 s (FALLBACK — o tempo real
+ *  agora vem via SSE `chat_message`; este poll só cobre se o SSE perder algo). */
 function startChatPolling() {
   stopChatPolling();
   chatPollTimer = setInterval(async () => {
@@ -726,7 +738,7 @@ function startChatPolling() {
         lastChatPollAt = res.messages[res.messages.length - 1].created_at;
       }
     } catch { /* silencioso */ }
-  }, 15000);
+  }, 90000);
 }
 
 function stopChatPolling() {
