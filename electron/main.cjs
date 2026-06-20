@@ -35,14 +35,44 @@ let sseRequest        = null;  // conexão SSE ativa
 let sseReconnectTimer = null;  // timer de reconexão após queda
 let sseStopped        = false; // true quando parado intencionalmente (ban / logout)
 
+/* ── Chat cloud: polling + histórico ─────────────────────────────── */
+let chatPollTimer   = null;
+let lastChatPollAt  = null; // ISO string da última mensagem vista no cloud
+
 /* ── Estado do servidor de equipe (WebSocket local) ──────────────── */
 const TEAM_WS_PORT  = 8765;
 const TEAM_HTTP_PORT = 8766;
 let   teamWss       = null;   // WebSocketServer instance
 let   teamHttpServer = null;  // HTTP server for background polling
 const teamDevices   = new Map(); // deviceId → { ws, info }
-const pendingQueue  = new Map(); // deviceId → [msg, msg, ...] — mensagens para dispositivos offline
-const pushTokens    = new Map(); // deviceId → ExpoPushToken string
+const pendingQueue          = new Map(); // deviceId → [msg, msg, ...] — mensagens para dispositivos offline
+const disconnectTimers      = new Map(); // deviceId → setTimeout — grace period antes de anunciar "saiu"
+const pushTokens            = new Map(); // deviceId → ExpoPushToken string
+const deviceAssignmentStore = new Map(); // deviceId → { profiles, assignedAt } — última atribuição conhecida
+
+/* ── Persistência da pendingQueue em disco ───────────────────────── */
+const PENDING_QUEUE_FILE = () => path.join(app.getPath('userData'), 'pending-queue.json');
+
+function savePendingQueue() {
+  try {
+    const obj = {};
+    for (const [deviceId, msgs] of pendingQueue.entries()) {
+      if (msgs.length > 0) obj[deviceId] = msgs;
+    }
+    fs.writeFileSync(PENDING_QUEUE_FILE(), JSON.stringify(obj), 'utf8');
+  } catch { /* não-crítico */ }
+}
+
+function loadPendingQueue() {
+  try {
+    const raw = fs.readFileSync(PENDING_QUEUE_FILE(), 'utf8');
+    const obj = JSON.parse(raw);
+    for (const [deviceId, msgs] of Object.entries(obj)) {
+      if (Array.isArray(msgs) && msgs.length > 0) pendingQueue.set(deviceId, msgs);
+    }
+    console.log('[PendingQueue] Carregados', pendingQueue.size, 'devices da fila persistida');
+  } catch { /* arquivo pode não existir na primeira execução */ }
+}
 let   sessionName   = 'Sessão ApexDynamics';
 let   pairingToken  = crypto.randomBytes(16).toString('hex'); // regenerado a cada inicialização
 
@@ -79,6 +109,42 @@ function sendExpoPush(pushToken, title, body, data = {}, channelId = 'team', pri
   req.end();
 }
 
+/** Push dedicado de emergência — máxima prioridade, som de alarme, TTL zero */
+function sendEmergencyPush(pushToken, message, alertId) {
+  if (!pushToken) return;
+  const payload = JSON.stringify({
+    to: pushToken,
+    title: '🚨 EMERGÊNCIA',
+    body: message,
+    sound: 'alarm.wav',   // corresponde ao arquivo bundled no app
+    priority: 'high',
+    ttl: 0,               // entrega imediata ou descarta (não enfileira)
+    channelId: 'emergency',
+    data: { type: 'emergency', id: alertId },
+    android: {
+      priority: 'max',
+      channelId: 'emergency',
+      vibrationPattern: [0, 800, 200, 800, 200, 800],
+    },
+  });
+  const req = https.request({
+    hostname: 'exp.host', port: 443,
+    path: '/--/api/v2/push/send', method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    },
+  }, (res) => {
+    let body = '';
+    res.on('data', chunk => body += chunk);
+    res.on('end', () => console.log('[EmergencyPush] Response:', res.statusCode, body.substring(0, 200)));
+  });
+  req.on('error', e => console.error('[EmergencyPush] Error:', e.message));
+  req.write(payload);
+  req.end();
+}
+
 /** Envia push para todos os devices offline (WS não aberto) */
 function pushToOfflineDevices(title, body, data = {}, channelId = 'team', priority = 'high') {
   // Devices que estão no pushTokens mas não têm WS aberto
@@ -90,14 +156,36 @@ function pushToOfflineDevices(title, body, data = {}, channelId = 'team', priori
   }
 }
 
-/** Retorna o IP local da máquina na rede Wi-Fi/LAN */
+/**
+ * Envia push notification via cloud para um device que não está na LAN
+ * (e portanto não tem push token registrado localmente).
+ * mobileDeviceId = UUID gerado pelo app mobile (AsyncStorage), que o servidor
+ * armazena em users.mobile_device_id.
+ */
+function cloudNotifyDevice(mobileDeviceId, title, body, data = {}) {
+  if (!sessionToken || !mobileDeviceId) return;
+  cloudRequest('POST', '/api/team/notify-device', { mobileDeviceId, title, body, data }).catch(() => {});
+}
+
+/** Retorna o IP local da máquina na rede Wi-Fi/LAN real (ignora adaptadores virtuais) */
 function getLocalIP() {
   const ifaces = os.networkInterfaces();
-  for (const name of Object.keys(ifaces)) {
-    for (const iface of ifaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+  // Padrões de adaptadores virtuais/VPN — não são acessíveis pelo celular na LAN
+  const VIRTUAL = /virtualbox|vmware|hyper.?v|vethernet|tap.windows|openvpn|radmin|tunneled|isatap|teredo|6to4|pseudo|loopback adapter/i;
+
+  const candidates = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (VIRTUAL.test(name)) continue;
+    for (const iface of addrs) {
+      if (iface.family !== 'IPv4' || iface.internal) continue;
+      const isWifi = /wi.?fi|wireless|wlan/i.test(name);
+      candidates.push({ address: iface.address, isWifi, name });
     }
   }
+  // Prefere Wi-Fi; fallback para o primeiro candidato não-virtual
+  const wifi = candidates.find(c => c.isWifi);
+  if (wifi) return wifi.address;
+  if (candidates.length > 0) return candidates[0].address;
   return '127.0.0.1';
 }
 
@@ -159,6 +247,14 @@ function startTeamServer() {
             return;
           }
           deviceId = msg.deviceId || crypto.randomUUID();
+
+          // Se havia um timer de grace period pendente, cancela — reconexão silenciosa
+          const silentReconnect = disconnectTimers.has(deviceId);
+          if (silentReconnect) {
+            clearTimeout(disconnectTimers.get(deviceId));
+            disconnectTimers.delete(deviceId);
+          }
+
           teamDevices.set(deviceId, { ws, info: {
             deviceId,
             name:     msg.deviceName || 'Desconhecido',
@@ -175,9 +271,16 @@ function startTeamServer() {
           // Confirma conexão
           wsSend(ws, { type: 'device:welcome', deviceId, sessionName,
             devicesOnline: [...teamDevices.values()].map(d => d.info) });
-          // Notifica todos (inclusive desktop)
-          teamBroadcast({ type: 'team:deviceJoined',
-            device: teamDevices.get(deviceId).info }, ws);
+          // Re-envia atribuição de perfil se existia antes do device desconectar
+          const storedAssignment = deviceAssignmentStore.get(deviceId);
+          if (storedAssignment) {
+            wsSend(ws, { type: 'device:profileAssigned', profiles: storedAssignment.profiles });
+          }
+          // Só anuncia "entrou" se não for uma reconexão silenciosa (app fechou/abriu rapidamente)
+          if (!silentReconnect) {
+            teamBroadcast({ type: 'team:deviceJoined',
+              device: teamDevices.get(deviceId).info }, ws);
+          }
           // Atualiza desktop com lista
           mainWindow?.webContents.send('team:event', {
             type: 'team:devicesUpdate',
@@ -220,10 +323,30 @@ function startTeamServer() {
           break;
         }
 
+        // Indicador de digitação — broadcast para desktop e outros celulares
+        case 'chat:typing': {
+          const typingInfo = { type: 'chat:typing', from: teamDevices.get(deviceId)?.info || { deviceId } };
+          teamBroadcast(typingInfo, ws);
+          mainWindow?.webContents.send('team:event', typingInfo);
+          break;
+        }
+
         // Mensagem de chat
         case 'chat:message': {
+          const msgWithId = { ...msg, id: msg.id || crypto.randomUUID() };
           // Broadcast para todos (outros celulares + desktop)
-          teamBroadcast({ ...msg, id: msg.id || crypto.randomUUID() }, ws);
+          teamBroadcast(msgWithId, ws);
+          // Bridge para cloud — persiste a mensagem e a torna disponível off-LAN
+          if (sessionToken && msgWithId.content?.text) {
+            const alias = msgWithId.from?.name
+              ? `${msgWithId.from.name}${msgWithId.from.role ? ` (${msgWithId.from.role})` : ''}`
+              : null;
+            cloudRequest('POST', '/api/team/messages', {
+              content:     msgWithId.content.text,
+              senderAlias: alias,
+              clientId:    msgWithId.id,
+            }).catch(() => {});
+          }
           break;
         }
 
@@ -237,11 +360,21 @@ function startTeamServer() {
       teamDevices.delete(deviceId);
       // Garante que o deviceId continua na pendingQueue para receber mensagens futuras
       if (!pendingQueue.has(deviceId)) pendingQueue.set(deviceId, []);
-      teamBroadcast({ type: 'team:deviceLeft', device: info });
+      // Atualiza lista imediatamente, mas anuncia "saiu" só após grace period de 6s
+      // (evita spam quando o app é fechado e reaberto rapidamente)
       mainWindow?.webContents.send('team:event', {
         type: 'team:devicesUpdate',
         devices: [...teamDevices.values()].map(d => d.info),
       });
+      const GRACE_MS = 6000;
+      disconnectTimers.set(deviceId, setTimeout(() => {
+        disconnectTimers.delete(deviceId);
+        teamBroadcast({ type: 'team:deviceLeft', device: info });
+        mainWindow?.webContents.send('team:event', {
+          type: 'team:devicesUpdate',
+          devices: [...teamDevices.values()].map(d => d.info),
+        });
+      }, GRACE_MS));
     });
 
     ws.on('error', () => {});
@@ -268,6 +401,7 @@ function queueForDevice(deviceId, msg) {
   const q = pendingQueue.get(deviceId);
   q.push({ ...msg, _queuedAt: Date.now() });
   if (q.length > 50) q.shift(); // mantém últimas 50
+  savePendingQueue();
 }
 
 /** Enfileira msg para TODOS os dispositivos cujo WS não está aberto */
@@ -304,6 +438,7 @@ function startTeamHttpServer() {
       }
       const msgs = pendingQueue.get(did) || [];
       pendingQueue.set(did, []); // limpa após entregar
+      if (msgs.length > 0) savePendingQueue();
       console.log('[HTTP] /pending for', did, '→', msgs.length, 'messages');
       res.writeHead(200);
       res.end(JSON.stringify({ messages: msgs }));
@@ -510,6 +645,51 @@ function stopSSE() {
   }
 }
 
+/* ── Chat cloud helpers ────────────────────────────────────────────── */
+
+/** Registra o pairingToken do desktop no servidor para que mobiles off-LAN possam usá-lo. */
+async function registerRelayToken() {
+  if (!sessionToken) return;
+  try {
+    await cloudRequest('POST', '/api/team/register-relay-token', { relayToken: pairingToken });
+    console.log('[relay] token registrado na nuvem');
+  } catch { /* silencioso — falha de rede */ }
+}
+
+/** Carrega o histórico de mensagens do cloud e envia ao renderer. */
+async function loadChatHistory() {
+  if (!sessionToken || !mainWindow) return;
+  try {
+    const res = await cloudRequest('GET', '/api/team/messages?limit=100');
+    if (res?.success && Array.isArray(res.messages) && res.messages.length > 0) {
+      mainWindow.webContents.send('team:event', { type: 'chat:history', messages: res.messages });
+      lastChatPollAt = res.messages[res.messages.length - 1].created_at;
+    }
+  } catch { /* silencioso */ }
+}
+
+/** Inicia polling de novas mensagens cloud a cada 15 s. */
+function startChatPolling() {
+  stopChatPolling();
+  chatPollTimer = setInterval(async () => {
+    if (!sessionToken || !mainWindow) return;
+    try {
+      const q = lastChatPollAt
+        ? `?since=${encodeURIComponent(lastChatPollAt)}&limit=50`
+        : '?limit=50';
+      const res = await cloudRequest('GET', `/api/team/messages${q}`);
+      if (res?.success && Array.isArray(res.messages) && res.messages.length > 0) {
+        mainWindow.webContents.send('team:event', { type: 'chat:cloudMessages', messages: res.messages });
+        lastChatPollAt = res.messages[res.messages.length - 1].created_at;
+      }
+    } catch { /* silencioso */ }
+  }, 15000);
+}
+
+function stopChatPolling() {
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+}
+
 /** Agenda reconexão após queda de rede (5 segundos). */
 function scheduleSSEReconnect() {
   stopSSE();
@@ -558,6 +738,7 @@ function createWindow() {
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com data:; " +
             "img-src 'self' data: blob:; " +
+            "media-src 'self' blob:; " +
             "connect-src 'self' https://api.apexdynamics.store http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*;",
           ],
         },
@@ -718,6 +899,9 @@ ipcMain.handle('license:login', async (_event, { username, password }) => {
     sessionToken = loginData.token;
     sessionHwid  = hwid;
     startSSE();
+    await registerRelayToken(); // await garante que o token está no servidor antes do mobile escanear
+    loadChatHistory();
+    startChatPolling();
 
     return {
       ...loginData,
@@ -892,7 +1076,10 @@ ipcMain.handle('license:resumeSession', async (_event, { token, hwid }) => {
     sessionHwid  = hwid;
     sseStopped   = false;
     startSSE();
-    console.log('[resumeSession] sessão retomada, SSE iniciado');
+    await registerRelayToken();
+    loadChatHistory();
+    startChatPolling();
+    console.log('[resumeSession] sessão retomada, SSE e chat cloud iniciados');
     return { success: true };
   } catch (err) {
     console.error('[resumeSession] erro:', err.message);
@@ -943,6 +1130,8 @@ async function refreshCertificateBackground() {
 ipcMain.handle('license:logout', () => {
   sseStopped = true;
   stopSSE();
+  stopChatPolling();
+  lastChatPollAt = null;
   sessionToken = null;
   sessionHwid  = null;
   return { success: true };
@@ -1001,54 +1190,95 @@ ipcMain.handle('team:sendChatMessage', (_e, msg) => {
     timestamp: new Date().toISOString(), content: { text: msg.text } };
   console.log('[TeamChat] broadcasting to', teamDevices.size, 'devices:', full.content.text);
   teamBroadcast(full);
-  // Push notification para devices offline
+  // Push notification para devices offline na LAN
   const sender = msg.senderName || 'Desktop';
   pushToOfflineDevices(`💬 ${sender}`, msg.text || 'Nova mensagem', { type: 'chat' });
+  // Persiste no cloud — mensagens do desktop também devem sobreviver ao restart
+  if (sessionToken && full.content?.text) {
+    cloudRequest('POST', '/api/team/messages', {
+      content:  full.content.text,
+      clientId: full.id,
+      // sem senderAlias → cloud usa o username do JWT (usuário desktop logado)
+    }).catch(() => {});
+  }
   return { ok: true };
 });
 
-/** Desktop aprova uma medição → notifica celular + retorna dados para o renderer */
+/** Desktop aprova uma medição → notifica celular via WS ou push (LAN ou cloud) */
 ipcMain.handle('team:approveMeasurement', (_e, { measurementId, deviceId: targetDeviceId }) => {
-  const dev = teamDevices.get(targetDeviceId);
-  const msg = { type: 'measurement:approved', measurementId, approvedAt: new Date().toISOString() };
+  const dev   = teamDevices.get(targetDeviceId);
+  const msg   = { type: 'measurement:approved', measurementId, approvedAt: new Date().toISOString() };
   const sentOk = dev ? wsSend(dev.ws, msg) : false;
   if (!sentOk) {
     queueForDevice(targetDeviceId, msg);
-    const token = pushTokens.get(targetDeviceId);
-    if (token) sendExpoPush(token, '✅ Medição Aprovada', 'Sua medição foi aprovada pelo engenheiro.');
+    const localToken = pushTokens.get(targetDeviceId);
+    if (localToken) {
+      sendExpoPush(localToken, '✅ Medição Aprovada', 'Sua medição foi aprovada pelo engenheiro.');
+    } else {
+      // Device nunca esteve na LAN nesta sessão — notifica via cloud
+      cloudNotifyDevice(targetDeviceId, '✅ Medição Aprovada', 'Sua medição foi aprovada pelo engenheiro.', { type: 'MEASUREMENT_APPROVED', measurementId });
+    }
   }
   return { ok: true };
 });
 
-/** Desktop ignora uma medição → notifica celular */
+/** Desktop ignora uma medição → notifica celular via WS ou push (LAN ou cloud) */
 ipcMain.handle('team:dismissMeasurement', (_e, { measurementId, deviceId: targetDeviceId }) => {
-  const dev = teamDevices.get(targetDeviceId);
-  const msg = { type: 'measurement:dismissed', measurementId };
+  const dev    = teamDevices.get(targetDeviceId);
+  const msg    = { type: 'measurement:dismissed', measurementId };
   const sentOk = dev ? wsSend(dev.ws, msg) : false;
   if (!sentOk) {
     queueForDevice(targetDeviceId, msg);
-    const token = pushTokens.get(targetDeviceId);
-    if (token) sendExpoPush(token, '❌ Medição Dispensada', 'Sua medição foi dispensada.');
+    const localToken = pushTokens.get(targetDeviceId);
+    if (localToken) {
+      sendExpoPush(localToken, '❌ Medição Dispensada', 'Sua medição foi dispensada.');
+    } else {
+      cloudNotifyDevice(targetDeviceId, '❌ Medição Dispensada', 'Sua medição foi dispensada.', { type: 'MEASUREMENT_DISMISSED', measurementId });
+    }
   }
   return { ok: true };
 });
 
-/** Desktop aprova um cronômetro → notifica celular */
+/** Desktop aprova um cronômetro → notifica celular via WS ou push */
 ipcMain.handle('team:approveTimer', (_e, { timerId, deviceId: targetDeviceId }) => {
-  const dev = teamDevices.get(targetDeviceId);
-  if (dev) wsSend(dev.ws, { type: 'timer:approved', timerId });
+  const dev    = teamDevices.get(targetDeviceId);
+  const msg    = { type: 'timer:approved', timerId };
+  const sentOk = dev ? wsSend(dev.ws, msg) : false;
+  if (!sentOk) {
+    queueForDevice(targetDeviceId, msg);
+    const localToken = pushTokens.get(targetDeviceId);
+    if (localToken) {
+      sendExpoPush(localToken, '⏱️ Cronômetro Aprovado', 'Seu tempo foi registrado pelo engenheiro.');
+    } else {
+      cloudNotifyDevice(targetDeviceId, '⏱️ Cronômetro Aprovado', 'Seu tempo foi registrado pelo engenheiro.', { type: 'TIMER_APPROVED', timerId });
+    }
+  }
   return { ok: true };
 });
 
-/** Desktop atribui perfis a um dispositivo → notifica celular */
-ipcMain.handle('team:assignDevice', (_e, { deviceId: targetDeviceId, profileId, profileName }) => {
-  const dev = teamDevices.get(targetDeviceId);
-  if (dev) {
-    // profileId pode ser: null (remover), array de {id,name}, ou string legada
-    wsSend(dev.ws, {
-      type: 'device:profileAssigned',
-      profiles: profileId, // null ou [{id, name}, ...]
-    });
+/** Desktop atribui perfis a um dispositivo → notifica celular e persiste para reconexão */
+ipcMain.handle('team:assignDevice', (_e, { deviceId: targetDeviceId, profileId }) => {
+  // Persiste atribuição para re-enviar ao reconectar (seja LAN ou cloud)
+  if (profileId === null) {
+    deviceAssignmentStore.delete(targetDeviceId);
+  } else {
+    deviceAssignmentStore.set(targetDeviceId, { profiles: profileId, assignedAt: new Date().toISOString() });
+  }
+
+  const dev    = teamDevices.get(targetDeviceId);
+  const msg    = { type: 'device:profileAssigned', profiles: profileId };
+  const sentOk = dev ? wsSend(dev.ws, msg) : false;
+  if (!sentOk) {
+    queueForDevice(targetDeviceId, msg);
+    const profileLabel = Array.isArray(profileId) && profileId.length > 0
+      ? profileId.map(p => p.name || p.id).join(', ')
+      : 'removido';
+    const localToken = pushTokens.get(targetDeviceId);
+    if (localToken) {
+      sendExpoPush(localToken, '🏎️ Perfil Atribuído', `Perfil: ${profileLabel}`);
+    } else {
+      cloudNotifyDevice(targetDeviceId, '🏎️ Perfil Atribuído', `Perfil: ${profileLabel}`, { type: 'PROFILE_ASSIGNED' });
+    }
   }
   return { ok: true };
 });
@@ -1077,14 +1307,40 @@ ipcMain.handle('team:sendEmergency', (_e, { message }) => {
       queueForDevice(deviceId, alert);
     }
   }
-  // PUSH NOTIFICATION para TODOS os devices (inclusive os com WS aberto, para garantir)
-  for (const [deviceId, token] of pushTokens.entries()) {
-    sendExpoPush(token, '🚨 EMERGÊNCIA', alertMsg,
-      { type: 'emergency', id: alert.id },
-      'emergency', 'high');
+  // PUSH NOTIFICATION para TODOS os devices com máxima urgência
+  for (const [, token] of pushTokens.entries()) {
+    sendEmergencyPush(token, alertMsg, alert.id);
   }
   console.log('[Emergency] WS sent:', sent, '| Push sent to:', pushTokens.size, 'tokens');
+  // Dispara FCM via cloud para membros off-LAN que não estão nos pushTokens locais
+  if (sessionToken) {
+    cloudRequest('POST', '/api/team/emergency', { reason: alertMsg }).catch(() => {});
+  }
   return { ok: true, sent };
+});
+
+/** Persiste histórico de medições (aprovadas/dispensadas) entre sessões */
+const MEASUREMENTS_FILE = () => path.join(app.getPath('userData'), 'measurements-history.json');
+
+ipcMain.handle('team:saveMeasurements', (_e, measurements) => {
+  try {
+    fs.writeFileSync(MEASUREMENTS_FILE(), JSON.stringify(measurements), 'utf8');
+    return { ok: true };
+  } catch { return { ok: false }; }
+});
+
+ipcMain.handle('team:loadMeasurements', () => {
+  try {
+    const raw = fs.readFileSync(MEASUREMENTS_FILE(), 'utf8');
+    return { ok: true, measurements: JSON.parse(raw) };
+  } catch { return { ok: true, measurements: [] }; }
+});
+
+/** Desktop indica que está digitando — broadcast para celulares na LAN */
+ipcMain.handle('team:sendTypingEvent', () => {
+  const typingMsg = { type: 'chat:typing', from: { deviceId: 'desktop', name: 'Engenheiro (Desktop)', platform: 'desktop' } };
+  for (const { ws } of teamDevices.values()) wsSend(ws, typingMsg);
+  return { ok: true };
 });
 
 /** Inicia/para servidor manualmente (o app inicia automático, mas pode ser parado pelo usuário) */
@@ -1133,10 +1389,12 @@ ipcMain.handle('cloud:startSession',      (_e, { name }) => cloudRequest('POST',
 ipcMain.handle('cloud:endSession',        (_e, { id }) => cloudRequest('PUT', `/api/team/sessions/${id}/end`, {}));
 ipcMain.handle('cloud:getLatestCarData',  () => cloudRequest('GET',  '/api/team/car-data/latest'));
 ipcMain.handle('cloud:getLatestTrackCond',() => cloudRequest('GET',  '/api/team/track-conditions/latest'));
+ipcMain.handle('cloud:saveTrackCond',     (_e, data) => cloudRequest('POST', '/api/team/track-conditions', data));
 
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 
 app.whenReady().then(() => {
+  loadPendingQueue(); // restaura fila de mensagens pendentes da sessão anterior
   createWindow();
   startTeamServer();
   startTeamHttpServer();
