@@ -166,6 +166,21 @@ export function TeamProvider({ children }) {
           loadWorkspaceRef.current?.();
           break;
 
+        // Admin alterou o plano (teto/suspensão/nome) → recarrega para refletir.
+        case 'workspace_changed':
+          loadWorkspaceRef.current?.();
+          setChatToast({ senderName: 'Equipe', preview: 'O plano do workspace foi atualizado pelo administrador.' });
+          break;
+
+        // Admin excluiu a equipe → limpa o estado da nuvem na hora.
+        case 'workspace_deleted':
+          setCloudSeats(null);
+          setPendingMembers([]);
+          setCloudMeasurements([]);
+          setJoinTokenInfo(null);
+          setChatToast({ senderName: 'Equipe', preview: 'O workspace foi removido pelo administrador.' });
+          break;
+
         default: break;
       }
     });
@@ -210,6 +225,14 @@ export function TeamProvider({ children }) {
         window.cloudTeamAPI.getPendingMembers?.(),
         window.cloudTeamAPI.getPendingMeasurements?.(),
       ]);
+      // Resposta definitiva do servidor sem equipe (excluída/sem vínculo) → limpa estado velho.
+      if (seats && seats.success === false) {
+        setCloudSeats(null);
+        setPendingMembers([]);
+        setCloudMeasurements([]);
+        setJoinTokenInfo(null);
+        return;
+      }
       if (seats?.success) setCloudSeats(seats);
       if (pend?.success)  setPendingMembers(pend.pending || []);
       if (meas?.success)  setCloudMeasurements(meas.pending || []);

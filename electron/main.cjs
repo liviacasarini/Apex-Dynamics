@@ -676,7 +676,9 @@ function startSSE() {
               payload.type === 'team_join_request'    ||
               payload.type === 'team_join_approved'   ||
               payload.type === 'team_removed'         ||
-              payload.type === 'team_role_changed') {
+              payload.type === 'team_role_changed'    ||
+              payload.type === 'workspace_changed'    ||
+              payload.type === 'workspace_deleted') {
             mainWindow?.webContents.send('team:event', { type: payload.type, payload });
           }
         } catch { /* ignora linhas mal formadas */ }
