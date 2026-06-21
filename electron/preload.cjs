@@ -189,4 +189,16 @@ contextBridge.exposeInMainWorld('cloudTeamAPI', {
   getLatestCarData:  ()           => ipcRenderer.invoke('cloud:getLatestCarData'),
   getLatestTrackCond:()           => ipcRenderer.invoke('cloud:getLatestTrackCond'),
   saveTrackCond:     (data)       => ipcRenderer.invoke('cloud:saveTrackCond', data),
+
+  /* ── Workspace pago (Etapa 4) ── */
+  getSeats:               ()                 => ipcRenderer.invoke('cloud:getSeats'),
+  getJoinToken:           ()                 => ipcRenderer.invoke('cloud:getJoinToken'),
+  getPendingMembers:      ()                 => ipcRenderer.invoke('cloud:getPendingMembers'),
+  approveMember:          (memberId)         => ipcRenderer.invoke('cloud:approveMember', { memberId }),
+  rejectMember:           (memberId)         => ipcRenderer.invoke('cloud:rejectMember', { memberId }),
+  removeMember:           (memberId)         => ipcRenderer.invoke('cloud:removeMember', { memberId }),
+  setMemberRole:          (memberId, role)   => ipcRenderer.invoke('cloud:setMemberRole', { memberId, role }),
+  getPendingMeasurements: ()                 => ipcRenderer.invoke('cloud:getPendingMeasurements'),
+  approveMeasurement:     (id)               => ipcRenderer.invoke('cloud:approveMeasurement', { id }),
+  dismissMeasurement:     (id)               => ipcRenderer.invoke('cloud:dismissMeasurement', { id }),
 });

@@ -62,6 +62,9 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     refreshServerInfo, markChatRead, senderNameRef,
     deviceAssignments, assignDeviceToProfile,
     sendEmergency, typingUsers,
+    // Workspace pago (Etapa 4)
+    cloudSeats, pendingMembers, cloudMeasurements, joinTokenInfo,
+    approveMember, rejectMember, approveCloudMeasurement, dismissCloudMeasurement,
   } = useTeam();
 
   const [activeSection, setActiveSection] = useState('conexao');
@@ -257,6 +260,86 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
       {/* ─── Seção: Conexão / QR Code ─── */}
       {activeSection === 'conexao' && (
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+
+          {/* ─── Workspace na nuvem (Etapa 4) ─── */}
+          <div style={{ ...theme.card, flex: '1 1 100%' }}>
+            <div style={theme.cardTitle}>☁️ Workspace na nuvem</div>
+
+            {/* Resumo de seats */}
+            {cloudSeats ? (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                {[
+                  { n: `${cloudSeats.used ?? 0}/${cloudSeats.seatLimit ?? '∞'}`, l: 'Seats' },
+                  { n: `🖥️ ${cloudSeats.byType?.desktop ?? 0}`, l: 'Desktop' },
+                  { n: `📱 ${cloudSeats.byType?.mobile ?? 0}`, l: 'Mobile' },
+                  { n: `⏳ ${cloudSeats.pendingCount ?? 0}`, l: 'Pendentes' },
+                ].map((s, i) => (
+                  <div key={i} style={{ background: `${C.bgCard}80`, border: `1px solid ${C.border}22`,
+                    borderRadius: 8, padding: '8px 16px', textAlign: 'center', minWidth: 72 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.textPrimary }}>{s.n}</div>
+                    <div style={{ fontSize: 9, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1 }}>{s.l}</div>
+                  </div>
+                ))}
+                {cloudSeats.workspaceStatus === 'suspended' && (
+                  <div style={{ alignSelf: 'center', color: C.accent, fontWeight: 700, fontSize: 12 }}>⚠️ Workspace suspenso</div>
+                )}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>Carregando dados do workspace…</div>
+            )}
+
+            {/* Dispositivos aguardando aprovação (chefe) */}
+            {pendingMembers?.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                  Aguardando aprovação
+                </div>
+                {pendingMembers.map(m => (
+                  <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: `${C.yellow}10`, border: `1px solid ${C.yellow}30`, borderRadius: 8,
+                    padding: '8px 12px', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13 }}>
+                      {m.device_type === 'mobile' ? '📱' : '🖥️'} {m.full_name || m.username || m.apex_hash}
+                    </span>
+                    <span style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => approveMember(m.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: C.green, color: '#fff' }}>Aprovar</button>
+                      <button onClick={() => rejectMember(m.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Rejeitar</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Medições pendentes da nuvem (qualquer desktop aprova) */}
+            {cloudMeasurements?.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                  Medições aguardando aprovação
+                </div>
+                {cloudMeasurements.map(ms => (
+                  <div key={ms.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: `${C.blue}10`, border: `1px solid ${C.blue}30`, borderRadius: 8,
+                    padding: '8px 12px', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13 }}>
+                      {ms.submitter_name || 'Equipe'} → <strong>{ms.car_name || 'Carro'}</strong>
+                      <span style={{ color: C.textMuted, marginLeft: 6 }}>({ms.category})</span>
+                    </span>
+                    <span style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => approveCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: C.green, color: '#fff' }}>Aprovar</button>
+                      <button onClick={() => dismissCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Dispensar</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Token de pareamento da nuvem (chefe) */}
+            {joinTokenInfo?.joinToken && (
+              <div style={{ marginTop: 10, fontSize: 11, color: C.textMuted }}>
+                Token de pareamento: <code style={{ color: C.cyan }}>{joinTokenInfo.joinToken}</code>
+              </div>
+            )}
+          </div>
 
           {/* Card QR */}
           <div style={{ ...theme.card, flex: '0 0 auto', minWidth: 280, textAlign: 'center' }}>

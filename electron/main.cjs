@@ -668,6 +668,17 @@ function startSSE() {
             });
             lastChatPollAt = payload.message.created_at || lastChatPollAt;
           }
+          // ── Eventos de workspace pago (Etapa 2) — encaminha ao renderer ──
+          // O TeamContext reage recarregando seats/pendentes/medições.
+          if (payload.type === 'measurement_pending'  ||
+              payload.type === 'measurement_approved' ||
+              payload.type === 'measurement_dismissed'||
+              payload.type === 'team_join_request'    ||
+              payload.type === 'team_join_approved'   ||
+              payload.type === 'team_removed'         ||
+              payload.type === 'team_role_changed') {
+            mainWindow?.webContents.send('team:event', { type: payload.type, payload });
+          }
         } catch { /* ignora linhas mal formadas */ }
       }
     });
@@ -1451,6 +1462,18 @@ ipcMain.handle('cloud:endSession',        (_e, { id }) => cloudRequest('PUT', `/
 ipcMain.handle('cloud:getLatestCarData',  () => cloudRequest('GET',  '/api/team/car-data/latest'));
 ipcMain.handle('cloud:getLatestTrackCond',() => cloudRequest('GET',  '/api/team/track-conditions/latest'));
 ipcMain.handle('cloud:saveTrackCond',     (_e, data) => cloudRequest('POST', '/api/team/track-conditions', data));
+
+/* ── Workspace pago (Etapa 4): seats, aprovação de devices e medições ── */
+ipcMain.handle('cloud:getSeats',          () => cloudRequest('GET',  '/api/team/seats'));
+ipcMain.handle('cloud:getJoinToken',      () => cloudRequest('GET',  '/api/team/join-token'));
+ipcMain.handle('cloud:getPendingMembers', () => cloudRequest('GET',  '/api/team/pending'));
+ipcMain.handle('cloud:approveMember',     (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/approve`, {}));
+ipcMain.handle('cloud:rejectMember',      (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/reject`, {}));
+ipcMain.handle('cloud:removeMember',      (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/remove`, {}));
+ipcMain.handle('cloud:setMemberRole',     (_e, { memberId, role }) => cloudRequest('POST', `/api/team/members/${memberId}/role`, { role }));
+ipcMain.handle('cloud:getPendingMeasurements', () => cloudRequest('GET', '/api/team/measurements/pending'));
+ipcMain.handle('cloud:approveMeasurement',(_e, { id }) => cloudRequest('POST', `/api/team/measurements/${id}/approve`, {}));
+ipcMain.handle('cloud:dismissMeasurement',(_e, { id }) => cloudRequest('POST', `/api/team/measurements/${id}/dismiss`, {}));
 
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 

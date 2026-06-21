@@ -24,9 +24,16 @@ export function TeamProvider({ children }) {
   const [chatToast,         setChatToast]         = useState(null);
   const [typingUsers,       setTypingUsers]       = useState({}); // deviceId → { name, expiresAt }
 
+  /* ── Workspace pago (Etapa 4) — dados vindos da nuvem ── */
+  const [cloudSeats,        setCloudSeats]        = useState(null); // { seatLimit, used, byType, pendingCount, workspaceStatus }
+  const [pendingMembers,    setPendingMembers]    = useState([]);   // devices aguardando aprovação (chefe)
+  const [cloudMeasurements, setCloudMeasurements] = useState([]);   // medições pendentes (nuvem)
+  const [joinTokenInfo,     setJoinTokenInfo]     = useState(null); // { joinToken, teamName } (chefe)
+
   const senderNameRef   = useRef('Engenheiro (Desktop)');
   const seenClientIds   = useRef(new Set()); // UUIDs de msgs LAN já adicionadas → evita duplicata do polling
   const typingTimers    = useRef({});        // deviceId → clearTimeout handle
+  const loadWorkspaceRef = useRef(null);     // mirror estável de loadWorkspace p/ o handler SSE
 
   // Carrega info do servidor e histórico de medições ao montar
   useEffect(() => {
@@ -143,6 +150,22 @@ export function TeamProvider({ children }) {
           }
           break;
 
+        // ── Workspace pago (Etapa 4): eventos em tempo real ──
+        case 'team_join_request':
+          loadWorkspaceRef.current?.();
+          setChatToast({ senderName: 'Equipe', preview: 'Novo dispositivo aguardando aprovação.' });
+          break;
+        case 'measurement_pending':
+          loadWorkspaceRef.current?.();
+          break;
+        case 'measurement_approved':
+        case 'measurement_dismissed':
+        case 'team_join_approved':
+        case 'team_removed':
+        case 'team_role_changed':
+          loadWorkspaceRef.current?.();
+          break;
+
         default: break;
       }
     });
@@ -177,6 +200,66 @@ export function TeamProvider({ children }) {
     const s = (seconds % 60).toFixed(2).padStart(5, '0');
     return `${m}:${s}`;
   }
+
+  /* ── Workspace pago (Etapa 4): loaders + ações cloud ── */
+  const loadWorkspace = useCallback(async () => {
+    if (!window.cloudTeamAPI) return;
+    try {
+      const [seats, pend, meas] = await Promise.all([
+        window.cloudTeamAPI.getSeats?.(),
+        window.cloudTeamAPI.getPendingMembers?.(),
+        window.cloudTeamAPI.getPendingMeasurements?.(),
+      ]);
+      if (seats?.success) setCloudSeats(seats);
+      if (pend?.success)  setPendingMembers(pend.pending || []);
+      if (meas?.success)  setCloudMeasurements(meas.pending || []);
+    } catch { /* offline — mantém estado atual (fila otimista) */ }
+  }, []);
+  loadWorkspaceRef.current = loadWorkspace; // mantém o mirror sempre atualizado
+
+  const loadJoinToken = useCallback(async () => {
+    if (!window.cloudTeamAPI?.getJoinToken) return;
+    try {
+      const r = await window.cloudTeamAPI.getJoinToken();
+      if (r?.success) setJoinTokenInfo(r); // só chefes recebem; participantes ignoram 403
+    } catch { /* ignore */ }
+  }, []);
+
+  const approveMember = useCallback(async (memberId) => {
+    const r = await window.cloudTeamAPI?.approveMember(memberId);
+    if (r?.success) { setPendingMembers(p => p.filter(m => m.id !== memberId)); loadWorkspace(); }
+    return r;
+  }, [loadWorkspace]);
+
+  const rejectMember = useCallback(async (memberId) => {
+    const r = await window.cloudTeamAPI?.rejectMember(memberId);
+    if (r?.success) setPendingMembers(p => p.filter(m => m.id !== memberId));
+    return r;
+  }, []);
+
+  const setMemberRole = useCallback(async (memberId, role) => {
+    const r = await window.cloudTeamAPI?.setMemberRole(memberId, role);
+    if (r?.success) loadWorkspace();
+    return r;
+  }, [loadWorkspace]);
+
+  const approveCloudMeasurement = useCallback(async (id) => {
+    const r = await window.cloudTeamAPI?.approveMeasurement(id);
+    if (r?.success) setCloudMeasurements(m => m.filter(x => x.id !== id));
+    return r;
+  }, []);
+
+  const dismissCloudMeasurement = useCallback(async (id) => {
+    const r = await window.cloudTeamAPI?.dismissMeasurement(id);
+    if (r?.success) setCloudMeasurements(m => m.filter(x => x.id !== id));
+    return r;
+  }, []);
+
+  // Carrega ao montar e quando a aba Equipe é aberta.
+  useEffect(() => {
+    loadWorkspace();
+    loadJoinToken();
+  }, [loadWorkspace, loadJoinToken, teamTabOpen]);
 
   const sendChatMessage = useCallback(async (text) => {
     if (!text.trim() || !window.teamAPI) return;
@@ -281,6 +364,11 @@ export function TeamProvider({ children }) {
       senderNameRef,
       deviceAssignments, assignDeviceToProfile,
       sendEmergency,
+      // Workspace pago (Etapa 4)
+      cloudSeats, pendingMembers, cloudMeasurements, joinTokenInfo,
+      loadWorkspace, loadJoinToken,
+      approveMember, rejectMember, setMemberRole,
+      approveCloudMeasurement, dismissCloudMeasurement,
     }}>
       {children}
     </TeamContext.Provider>
