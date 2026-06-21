@@ -6,19 +6,26 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#0a0a0f"
     },
     "android": {
       "package": "com.apexdynamics.mobile",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0f"
       },
       "permissions": [
         "CAMERA",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
-        "ACCESS_WIFI_STATE"
+        "ACCESS_WIFI_STATE",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "RECEIVE_BOOT_COMPLETED",
+        "USE_FULL_SCREEN_INTENT"
       ]
     },
     "ios": {
@@ -36,14 +43,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "NecessÃ¡rio para escanear QR code do desktop"
+          "cameraPermission": "Necessário para escanear QR code do desktop"
         }
       ],
       [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#e63946"
+          "color": "#e63946",
+          "sounds": ["./assets/alarm.wav"]
         }
       ]
     ],
