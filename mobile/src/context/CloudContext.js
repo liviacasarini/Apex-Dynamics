@@ -13,6 +13,7 @@
  */
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import * as cloud from '../api/cloud';
 
 const CloudContext = createContext(null);
@@ -120,55 +121,9 @@ export function CloudProvider({ children }) {
     } catch { /* offline */ }
   }, [normalizeChat]);
 
-  const sendChat = useCallback(async (text) => {
-    if (!text?.trim()) return;
-    try {
-      await cloud.sendChat(text.trim());
-      await loadMessages(); // traz a mensagem recém-enviada (marcada como própria)
-    } catch (e) {
-      if (e?.offline) await enqueue({ kind: 'chat', text: text.trim() });
-    }
-  }, [loadMessages, enqueue]);
-
-  // Polling de chat enquanto ativo na equipe.
-  useEffect(() => {
-    if (stage === 'active') {
-      flushQueue();
-      loadMessages();
-      chatPollRef.current = setInterval(() => { flushQueue(); loadMessages(); }, 10000);
-    }
-    return () => { if (chatPollRef.current) { clearInterval(chatPollRef.current); chatPollRef.current = null; } };
-  }, [stage, loadMessages, flushQueue]);
-
-  const registerAndJoin = useCallback(async ({ joinToken, username, phone, password }) => {
-    const res = await cloud.registerAndJoin({ joinToken, username, phone, password, deviceId });
-    if (res?.success) {
-      usernameRef.current = res.username;
-      setProfile({ apexHash: res.apexHash, role: 'user', username: res.username });
-      setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
-      setStage(res.status === 'active' ? 'active' : 'pending');
-    }
-    return res;
-  }, [deviceId]);
-
-  const join = useCallback(async (joinToken) => {
-    const res = await cloud.joinWorkspace(joinToken, 'mobile', deviceId);
-    if (res?.success) {
-      setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
-      setStage(res.status === 'active' ? 'active' : 'pending');
-    }
-    return res;
-  }, [deviceId]);
-
-  const logout = useCallback(async () => {
-    await cloud.clearToken();
-    setMembership(null);
-    setProfile(null);
-    setCars([]);
-    setStage('login');
-  }, []);
-
-  /* ── Fila offline otimista (Etapa 6) ── */
+  /* ── Fila offline otimista (Etapa 6) ──
+   * Definida ANTES de sendChat / do useEffect de chat porque ambos a
+   * referenciam em seus arrays de dependência (evita TDZ com Hermes). */
   const persistQueue = useCallback(async () => {
     setPendingQueueCount(queueRef.current.length);
     try { await AsyncStorage.setItem('cloudQueue', JSON.stringify(queueRef.current)); } catch { /* ignore */ }
@@ -198,6 +153,69 @@ export function CloudProvider({ children }) {
     if (sent > 0) await persistQueue(); else setPendingQueueCount(queueRef.current.length);
     return sent;
   }, [persistQueue]);
+
+  const sendChat = useCallback(async (text) => {
+    if (!text?.trim()) return;
+    try {
+      await cloud.sendChat(text.trim());
+      await loadMessages(); // traz a mensagem recém-enviada (marcada como própria)
+    } catch (e) {
+      if (e?.offline) await enqueue({ kind: 'chat', text: text.trim() });
+    }
+  }, [loadMessages, enqueue]);
+
+  // Polling de chat enquanto ativo na equipe.
+  useEffect(() => {
+    if (stage === 'active') {
+      flushQueue();
+      loadMessages();
+      chatPollRef.current = setInterval(() => { flushQueue(); loadMessages(); }, 10000);
+    }
+    return () => { if (chatPollRef.current) { clearInterval(chatPollRef.current); chatPollRef.current = null; } };
+  }, [stage, loadMessages, flushQueue]);
+
+  /* ── Push: registra o token NATIVO (FCM) quando ativo ──
+   * O servidor envia via Firebase Admin (messaging().send), que exige o
+   * device token nativo do FCM — NÃO o Expo token. Por isso usamos
+   * getDevicePushTokenAsync (e não getExpoPushTokenAsync). As permissões
+   * e os canais já são montados pelo AppContext. */
+  useEffect(() => {
+    if (stage !== 'active') return;
+    (async () => {
+      try {
+        const { data: fcmToken } = await Notifications.getDevicePushTokenAsync();
+        if (fcmToken) await cloud.registerPushToken(fcmToken);
+      } catch { /* sem push — não crítico para o fluxo */ }
+    })();
+  }, [stage]);
+
+  const registerAndJoin = useCallback(async ({ joinToken, username, phone, password }) => {
+    const res = await cloud.registerAndJoin({ joinToken, username, phone, password, deviceId });
+    if (res?.success) {
+      usernameRef.current = res.username;
+      setProfile({ apexHash: res.apexHash, role: 'user', username: res.username });
+      setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
+      setStage(res.status === 'active' ? 'active' : 'pending');
+    }
+    return res;
+  }, [deviceId]);
+
+  const join = useCallback(async (joinToken) => {
+    const res = await cloud.joinWorkspace(joinToken, 'mobile', deviceId);
+    if (res?.success) {
+      setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
+      setStage(res.status === 'active' ? 'active' : 'pending');
+    }
+    return res;
+  }, [deviceId]);
+
+  const logout = useCallback(async () => {
+    await cloud.clearToken();
+    setMembership(null);
+    setProfile(null);
+    setCars([]);
+    setStage('login');
+  }, []);
 
   // Carrega a fila persistida no boot.
   useEffect(() => {
