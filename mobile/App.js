@@ -7,6 +7,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Text, View, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 
 import { AppProvider, useApp, COLORS } from './src/context/AppContext';
+import { CloudProvider, useCloud } from './src/context/CloudContext';
+import LoginScreen from './src/screens/LoginScreen';
+import JoinScreen from './src/screens/JoinScreen';
+import WaitingApprovalScreen from './src/screens/WaitingApprovalScreen';
 import PairingScreen from './src/screens/PairingScreen';
 import WaitingAssignmentScreen from './src/screens/WaitingAssignmentScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -75,30 +79,49 @@ function MainTabs() {
   );
 }
 
+/**
+ * RootNavigator — dirigido pela máquina de estados da nuvem (Etapa 5):
+ *   login → JoinScreen → pending → MainTabs (modelo 100% cloud).
+ * O fluxo LAN antigo (PairingScreen/WaitingAssignment) foi aposentado aqui.
+ */
 function RootNavigator() {
-  const { connected, connecting, assignedProfiles } = useApp();
+  const { stage, deviceId, onLoginSuccess } = useCloud();
 
-  // Não conectado → tela de pareamento
-  if (!connected && !connecting) {
+  const screenOpts = { headerShown: false, animation: 'fade' };
+
+  if (stage === 'loading') {
+    return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+  }
+
+  if (stage === 'login') {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
-        <Stack.Screen name="Pairing" component={PairingScreen} />
+      <Stack.Navigator screenOptions={screenOpts}>
+        <Stack.Screen name="Login">
+          {() => <LoginScreen deviceId={deviceId} onSuccess={onLoginSuccess} />}
+        </Stack.Screen>
       </Stack.Navigator>
     );
   }
 
-  // Conectado mas sem perfil atribuído → tela de espera
-  if (!assignedProfiles || assignedProfiles.length === 0) {
+  if (stage === 'join') {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
-        <Stack.Screen name="WaitingAssignment" component={WaitingAssignmentScreen} />
+      <Stack.Navigator screenOptions={screenOpts}>
+        <Stack.Screen name="Join" component={JoinScreen} />
       </Stack.Navigator>
     );
   }
 
-  // Conectado e atribuído → app completo
+  if (stage === 'pending') {
+    return (
+      <Stack.Navigator screenOptions={screenOpts}>
+        <Stack.Screen name="WaitingApproval" component={WaitingApprovalScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  // stage === 'active' → app completo
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+    <Stack.Navigator screenOptions={screenOpts}>
       <Stack.Screen name="Main" component={MainTabs} />
     </Stack.Navigator>
   );
@@ -231,13 +254,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <View style={{ flex: 1 }}>
-          <NavigationContainer theme={DarkTheme}>
-            <RootNavigator />
-            <StatusBar style="light" />
-          </NavigationContainer>
-          <EmergencyOverlay />
-        </View>
+        <CloudProvider>
+          <View style={{ flex: 1 }}>
+            <NavigationContainer theme={DarkTheme}>
+              <RootNavigator />
+              <StatusBar style="light" />
+            </NavigationContainer>
+            <EmergencyOverlay />
+          </View>
+        </CloudProvider>
       </AppProvider>
     </SafeAreaProvider>
   );
