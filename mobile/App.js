@@ -9,6 +9,7 @@ import { Text, View, StyleSheet, Animated, TouchableOpacity } from 'react-native
 import { AppProvider, useApp, COLORS } from './src/context/AppContext';
 import { CloudProvider, useCloud } from './src/context/CloudContext';
 import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
 import JoinScreen from './src/screens/JoinScreen';
 import WaitingApprovalScreen from './src/screens/WaitingApprovalScreen';
 import PairingScreen from './src/screens/PairingScreen';
@@ -97,7 +98,10 @@ function RootNavigator() {
     return (
       <Stack.Navigator screenOptions={screenOpts}>
         <Stack.Screen name="Login">
-          {() => <LoginScreen deviceId={deviceId} onSuccess={onLoginSuccess} />}
+          {(props) => <LoginScreen {...props} deviceId={deviceId} onSuccess={onLoginSuccess} />}
+        </Stack.Screen>
+        <Stack.Screen name="Register">
+          {(props) => <RegisterScreen {...props} deviceId={deviceId} />}
         </Stack.Screen>
       </Stack.Navigator>
     );

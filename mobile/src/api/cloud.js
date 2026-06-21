@@ -78,6 +78,18 @@ export async function login(username, password, deviceId) {
   return data;
 }
 
+/**
+ * Cadastro + entrada num passo (Opção C): cria a conta e entra no workspace
+ * via join_token. Conta nasce ativa; vínculo nasce 'pending'. Persiste o JWT.
+ */
+export async function registerAndJoin({ joinToken, username, phone, password, deviceId }) {
+  const data = await request('POST', '/api/team/mobile/register-and-join', {
+    joinToken, username, phone, password, deviceId,
+  });
+  if (data?.token) await setToken(data.token);
+  return data;
+}
+
 /** Registra o Expo/FCM push token do dispositivo no servidor. */
 export function registerPushToken(fcmToken) {
   return request('POST', '/api/team/fcm-token', { fcmToken }).catch(() => null);

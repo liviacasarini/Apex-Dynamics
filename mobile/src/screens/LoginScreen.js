@@ -23,7 +23,7 @@ function BrandBars({ height = 30, style }) {
  *   deviceId  — UUID estável do dispositivo (do AppContext).
  *   onSuccess — callback(loginData) após autenticar.
  */
-export default function LoginScreen({ deviceId, onSuccess }) {
+export default function LoginScreen({ deviceId, onSuccess, navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
@@ -109,9 +109,9 @@ export default function LoginScreen({ deviceId, onSuccess }) {
           </TouchableOpacity>
         </View>
 
-        <Text style={s.footer}>
-          Não tem APEX ID? Peça ao responsável pela sua conta ApexDynamics.
-        </Text>
+        <TouchableOpacity style={s.registerBtn} onPress={() => navigation?.navigate?.('Register')} activeOpacity={0.8}>
+          <Text style={s.registerText}>Não tenho conta — criar e entrar numa equipe</Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -148,4 +148,6 @@ const s = StyleSheet.create({
   btnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 2 },
 
   footer: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center', lineHeight: 16 },
+  registerBtn: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
+  registerText: { fontSize: 13, color: COLORS.blue, fontWeight: '700', textAlign: 'center' },
 });

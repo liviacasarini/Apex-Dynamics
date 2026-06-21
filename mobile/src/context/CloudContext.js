@@ -140,6 +140,17 @@ export function CloudProvider({ children }) {
     return () => { if (chatPollRef.current) { clearInterval(chatPollRef.current); chatPollRef.current = null; } };
   }, [stage, loadMessages, flushQueue]);
 
+  const registerAndJoin = useCallback(async ({ joinToken, username, phone, password }) => {
+    const res = await cloud.registerAndJoin({ joinToken, username, phone, password, deviceId });
+    if (res?.success) {
+      usernameRef.current = res.username;
+      setProfile({ apexHash: res.apexHash, role: 'user', username: res.username });
+      setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
+      setStage(res.status === 'active' ? 'active' : 'pending');
+    }
+    return res;
+  }, [deviceId]);
+
   const join = useCallback(async (joinToken) => {
     const res = await cloud.joinWorkspace(joinToken, 'mobile', deviceId);
     if (res?.success) {
@@ -230,7 +241,7 @@ export function CloudProvider({ children }) {
   return (
     <CloudContext.Provider value={{
       stage, deviceId, membership, profile, cars,
-      refresh, onLoginSuccess, join, logout,
+      refresh, onLoginSuccess, join, registerAndJoin, logout,
       loadCars, submitMeasurement,
       chatMessages, sendChat, loadMessages,
       pendingQueueCount, flushQueue,
