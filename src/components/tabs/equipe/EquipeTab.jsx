@@ -303,7 +303,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
                     </span>
                     <span style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => approveMember(m.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: C.green, color: '#fff' }}>Aprovar</button>
-                      <button onClick={() => rejectMember(m.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Rejeitar</button>
+                      <button onClick={() => rejectMember(m.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Rejeitar</button>
                     </span>
                   </div>
                 ))}
@@ -326,7 +326,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
                     </span>
                     <span style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => approveCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: C.green, color: '#fff' }}>Aprovar</button>
-                      <button onClick={() => dismissCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Dispensar</button>
+                      <button onClick={() => dismissCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Dispensar</button>
                     </span>
                   </div>
                 ))}
