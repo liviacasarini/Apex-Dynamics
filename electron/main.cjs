@@ -1465,7 +1465,21 @@ ipcMain.handle('cloud:saveTrackCond',     (_e, data) => cloudRequest('POST', '/a
 
 /* ── Workspace pago (Etapa 4): seats, aprovação de devices e medições ── */
 ipcMain.handle('cloud:getSeats',          () => cloudRequest('GET',  '/api/team/seats'));
-ipcMain.handle('cloud:getJoinToken',      () => cloudRequest('GET',  '/api/team/join-token'));
+ipcMain.handle('cloud:getJoinToken',      async () => {
+  const res = await cloudRequest('GET', '/api/team/join-token');
+  // Gera o QR com o join_token da NUVEM no formato que o mobile espera
+  // (JSON { joinToken }). Antes a aba exibia o QR antigo da LAN (pairingToken),
+  // e o mobile reclamava "Este QR não contém um token de pareamento".
+  if (res?.joinToken) {
+    try {
+      res.qrDataUrl = await QRCode.toDataURL(
+        JSON.stringify({ joinToken: res.joinToken }),
+        { width: 300, margin: 2 }
+      );
+    } catch { /* QR é opcional — o token continua disponível em texto */ }
+  }
+  return res;
+});
 ipcMain.handle('cloud:getPendingMembers', () => cloudRequest('GET',  '/api/team/pending'));
 ipcMain.handle('cloud:approveMember',     (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/approve`, {}));
 ipcMain.handle('cloud:rejectMember',      (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/reject`, {}));

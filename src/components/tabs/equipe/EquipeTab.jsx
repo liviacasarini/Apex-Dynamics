@@ -344,9 +344,9 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
           {/* Card QR */}
           <div style={{ ...theme.card, flex: '0 0 auto', minWidth: 280, textAlign: 'center' }}>
             <div style={theme.cardTitle}>🔗 Pareamento via QR Code</div>
-            {serverInfo?.qrDataUrl ? (
+            {joinTokenInfo?.qrDataUrl ? (
               <>
-                <img src={serverInfo.qrDataUrl} alt="QR Code"
+                <img src={joinTokenInfo.qrDataUrl} alt="QR Code"
                   style={{ width: 220, height: 220, borderRadius: 8, margin: '8px auto', display: 'block',
                     border: `2px solid ${C.border}`, background: '#fff' }} />
                 <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>
