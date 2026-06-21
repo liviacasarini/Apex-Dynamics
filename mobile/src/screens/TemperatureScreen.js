@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, COLORS, ROLE_LABELS } from '../context/AppContext';
+import { useCloud } from '../context/CloudContext';
 
 const TRACK_CONDITIONS = ['Seca', 'Úmida', 'Molhada', 'Intermediária'];
 const WIND_DIRS = ['—', 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const PRECIP_OPTIONS = ['—', 'Nenhuma', 'Garoa', 'Chuva leve', 'Chuva moderada', 'Chuva forte'];
+
+const CONDITION_COLORS = {
+  'Seca': COLORS.orange,
+  'Úmida': COLORS.blue,
+  'Molhada': COLORS.cyan,
+  'Intermediária': COLORS.yellow,
+};
 
 function todayISO() {
   const d = new Date();
@@ -19,8 +27,24 @@ function nowHHMM() {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
+function SectionCard({ title, icon, children }) {
+  return (
+    <View style={s.sectionCard}>
+      <View style={s.sectionCardHeader}>
+        <View style={s.sectionCardAccent} />
+        <Text style={s.sectionCardTitle}>{icon ? `${icon}  ` : ''}{title}</Text>
+      </View>
+      <View style={s.sectionCardBody}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
 export default function TemperatureScreen() {
-  const { submitMeasurement, notifications, assignedProfiles } = useApp();
+  const { notifications } = useApp();
+  const { cars: assignedProfiles, submitMeasurement, loadCars } = useCloud();
+  useEffect(() => { loadCars(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [selectedProfileIdx, setSelectedProfileIdx] = useState(0);
 
   const [date,            setDate]            = useState(todayISO());
@@ -37,6 +61,7 @@ export default function TemperatureScreen() {
   const [notes,           setNotes]           = useState('');
   const [submittedId,     setSubmittedId]     = useState(null);
   const [loading,         setLoading]         = useState(false);
+  const [inputFocus,      setInputFocus]      = useState(null);
 
   const submitted  = submittedId ? notifications.find((n) => n.measurementId === submittedId) : null;
   const statusType = submitted?.type;
@@ -72,157 +97,214 @@ export default function TemperatureScreen() {
   }
 
   const bannerColor =
-    statusType === 'measurement:approved'  ? '#06d6a022' :
-    statusType === 'measurement:dismissed' ? '#88888822' : '#ffd16622';
+    statusType === 'measurement:approved'  ? COLORS.green :
+    statusType === 'measurement:dismissed' ? COLORS.textMuted : COLORS.yellow;
+
+  const bannerBg =
+    statusType === 'measurement:approved'  ? COLORS.green + '18' :
+    statusType === 'measurement:dismissed' ? '#88888818' : COLORS.yellow + '18';
 
   const bannerText =
-    statusType === 'measurement:approved'  ? '✅ Medição aprovada!' :
-    statusType === 'measurement:dismissed' ? 'ℹ️ Medição dispensada.' :
-    '⏳ Aguardando aprovação do engenheiro...';
+    statusType === 'measurement:approved'  ? '✅  Medição aprovada!' :
+    statusType === 'measurement:dismissed' ? 'ℹ️  Medição dispensada.' :
+    '⏳  Aguardando aprovação do engenheiro...';
+
+  const inputStyle = (key) => [
+    s.input, inputFocus === key && s.inputFocused,
+  ];
 
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={s.screenTitle}>🌡️ Condições Ambientais</Text>
+
+          {/* Screen title */}
+          <View style={s.pageHeader}>
+            <View style={s.pageHeaderAccent} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.screenTitle}>CONDIÇÕES AMBIENTAIS</Text>
+              <Text style={s.screenSub}>Temperatura · Pista · Clima</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3 }}>
+              <View style={{ width: 5, height: 8,  backgroundColor: '#5a5a70', borderRadius: 1 }} />
+              <View style={{ width: 5, height: 14, backgroundColor: COLORS.blue,   borderRadius: 1 }} />
+              <View style={{ width: 5, height: 20, backgroundColor: COLORS.orange, borderRadius: 1 }} />
+            </View>
+            <Text style={s.screenIcon}>🌡️</Text>
+          </View>
 
           {/* Seletor de perfil */}
           {assignedProfiles && assignedProfiles.length > 1 ? (
             <View style={s.profileSelector}>
-              <Text style={s.profileSelectorLabel}>🏎️ Enviar para:</Text>
-              <View style={s.condRow}>
-                {assignedProfiles.map((p, i) => (
-                  <TouchableOpacity key={p.id}
-                    style={[s.condBtn, selectedProfileIdx === i && { backgroundColor: COLORS.green, borderColor: COLORS.green }]}
-                    onPress={() => setSelectedProfileIdx(i)}>
-                    <Text style={[s.condBtnText, selectedProfileIdx === i && { color: '#000', fontWeight: '800' }]}>{p.name}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={s.profileSelectorAccent} />
+              <View style={s.profileSelectorInner}>
+                <Text style={s.profileSelectorLabel}>🏎️  ENVIAR PARA</Text>
+                <View style={s.condRow}>
+                  {assignedProfiles.map((p, i) => (
+                    <TouchableOpacity key={p.id}
+                      style={[s.condBtn, selectedProfileIdx === i && { backgroundColor: COLORS.green, borderColor: COLORS.green }]}
+                      onPress={() => setSelectedProfileIdx(i)}
+                      activeOpacity={0.75}>
+                      <Text style={[s.condBtnText, selectedProfileIdx === i && { color: '#000', fontWeight: '800' }]}>{p.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
             </View>
           ) : assignedProfiles && assignedProfiles.length === 1 ? (
             <View style={s.profileBanner}>
-              <Text style={s.profileBannerText}>🏎️ Perfil: <Text style={{ color: COLORS.green, fontWeight: '800' }}>{assignedProfiles[0].name}</Text></Text>
+              <View style={s.profileBannerAccent} />
+              <Text style={s.profileBannerIcon}>🏎️</Text>
+              <Text style={s.profileBannerText}>
+                Perfil: <Text style={{ color: COLORS.green, fontWeight: '900' }}>{assignedProfiles[0].name}</Text>
+              </Text>
             </View>
           ) : null}
 
+          {/* Status banner */}
           {submittedId && (
-            <View style={[s.statusBanner, { backgroundColor: bannerColor }]}>
-              <Text style={s.statusBannerText}>{bannerText}</Text>
+            <View style={[s.statusBanner, { backgroundColor: bannerBg, borderColor: bannerColor + '50' }]}>
+              <Text style={[s.statusBannerText, { color: bannerColor }]}>{bannerText}</Text>
               {(statusType === 'measurement:approved' || statusType === 'measurement:dismissed') && (
-                <TouchableOpacity onPress={handleReset} style={s.newMeasBtn}>
-                  <Text style={s.newMeasBtnText}>Nova medição</Text>
+                <TouchableOpacity onPress={handleReset} style={s.newMeasBtn} activeOpacity={0.75}>
+                  <Text style={s.newMeasBtnText}>+ NOVA MEDIÇÃO</Text>
                 </TouchableOpacity>
               )}
             </View>
           )}
 
-          {/* ── Data e Hora ─── */}
-          <View style={s.row}>
-            <View style={s.halfField}>
-              <Text style={s.label}>📅 Data</Text>
-              <TextInput style={s.input} value={date} onChangeText={setDate}
-                placeholder="AAAA-MM-DD" placeholderTextColor={COLORS.textMuted} />
+          {/* Card: Data e Hora */}
+          <SectionCard title="DATA E HORA" icon="📅">
+            <View style={s.row}>
+              <View style={s.halfField}>
+                <Text style={s.label}>Data</Text>
+                <TextInput style={inputStyle('date')} value={date} onChangeText={setDate}
+                  placeholder="AAAA-MM-DD" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('date')} onBlur={() => setInputFocus(null)} />
+              </View>
+              <View style={s.halfField}>
+                <Text style={s.label}>Horário</Text>
+                <TextInput style={inputStyle('time')} value={time} onChangeText={setTime}
+                  placeholder="HH:MM" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('time')} onBlur={() => setInputFocus(null)} />
+              </View>
             </View>
-            <View style={s.halfField}>
-              <Text style={s.label}>🕐 Horário</Text>
-              <TextInput style={s.input} value={time} onChangeText={setTime}
-                placeholder="HH:MM" placeholderTextColor={COLORS.textMuted} />
+          </SectionCard>
+
+          {/* Card: Temperaturas */}
+          <SectionCard title="TEMPERATURAS" icon="🔥">
+            <View style={s.row}>
+              <View style={s.halfField}>
+                <Text style={s.label}>Pista (°C)</Text>
+                <TextInput style={inputStyle('trackTemp')} value={trackTemp} onChangeText={setTrackTemp}
+                  keyboardType="decimal-pad" placeholder="0.0" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('trackTemp')} onBlur={() => setInputFocus(null)} />
+              </View>
+              <View style={s.halfField}>
+                <Text style={s.label}>Ambiente (°C)</Text>
+                <TextInput style={inputStyle('ambientTemp')} value={ambientTemp} onChangeText={setAmbientTemp}
+                  keyboardType="decimal-pad" placeholder="0.0" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('ambientTemp')} onBlur={() => setInputFocus(null)} />
+              </View>
             </View>
-          </View>
+          </SectionCard>
 
-          {/* ── Temperaturas ─── */}
-          <View style={s.row}>
-            <View style={s.halfField}>
-              <Text style={s.label}>🔥 Temp. Pista (°C)</Text>
-              <TextInput style={s.input} value={trackTemp} onChangeText={setTrackTemp}
-                keyboardType="decimal-pad" placeholder="0.0" placeholderTextColor={COLORS.textMuted} />
+          {/* Card: Umidade e Altitude */}
+          <SectionCard title="UMIDADE E ALTITUDE" icon="💧">
+            <View style={s.row}>
+              <View style={s.halfField}>
+                <Text style={s.label}>Umidade (%)</Text>
+                <TextInput style={inputStyle('humidity')} value={humidity} onChangeText={setHumidity}
+                  keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('humidity')} onBlur={() => setInputFocus(null)} />
+              </View>
+              <View style={s.halfField}>
+                <Text style={s.label}>Altitude (m)</Text>
+                <TextInput style={inputStyle('altitude')} value={altitude} onChangeText={setAltitude}
+                  keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('altitude')} onBlur={() => setInputFocus(null)} />
+              </View>
             </View>
-            <View style={s.halfField}>
-              <Text style={s.label}>🌤️ Temp. Ambiente (°C)</Text>
-              <TextInput style={s.input} value={ambientTemp} onChangeText={setAmbientTemp}
-                keyboardType="decimal-pad" placeholder="0.0" placeholderTextColor={COLORS.textMuted} />
+          </SectionCard>
+
+          {/* Card: Pressão e Vento */}
+          <SectionCard title="PRESSÃO E VENTO" icon="💨">
+            <View style={s.row}>
+              <View style={s.halfField}>
+                <Text style={s.label}>Pressão Atm. (hPa)</Text>
+                <TextInput style={inputStyle('baroPressure')} value={baroPressure} onChangeText={setBaroPressure}
+                  keyboardType="decimal-pad" placeholder="1013" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('baroPressure')} onBlur={() => setInputFocus(null)} />
+              </View>
+              <View style={s.halfField}>
+                <Text style={s.label}>Vento (km/h)</Text>
+                <TextInput style={inputStyle('wind')} value={wind} onChangeText={setWind}
+                  keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted}
+                  onFocus={() => setInputFocus('wind')} onBlur={() => setInputFocus(null)} />
+              </View>
             </View>
-          </View>
 
-          {/* ── Umidade & Altitude ─── */}
-          <View style={s.row}>
-            <View style={s.halfField}>
-              <Text style={s.label}>💧 Umidade (%)</Text>
-              <TextInput style={s.input} value={humidity} onChangeText={setHumidity}
-                keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted} />
+            <Text style={[s.label, { marginTop: 14 }]}>🧭 Direção do Vento</Text>
+            <View style={s.condRow}>
+              {WIND_DIRS.map((d) => (
+                <TouchableOpacity key={d}
+                  style={[s.condBtn, windDir === d && { backgroundColor: COLORS.blue, borderColor: COLORS.blue }]}
+                  onPress={() => setWindDir(d)} activeOpacity={0.75}>
+                  <Text style={[s.condBtnText, windDir === d && { color: '#fff', fontWeight: '800' }]}>{d}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={s.halfField}>
-              <Text style={s.label}>⛰️ Altitude (m)</Text>
-              <TextInput style={s.input} value={altitude} onChangeText={setAltitude}
-                keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted} />
+          </SectionCard>
+
+          {/* Card: Condição da Pista */}
+          <SectionCard title="CONDIÇÃO DA PISTA" icon="🏁">
+            <View style={s.condRow}>
+              {TRACK_CONDITIONS.map((c) => {
+                const active = trackCondition === c;
+                const col = CONDITION_COLORS[c] || COLORS.orange;
+                return (
+                  <TouchableOpacity key={c}
+                    style={[s.condPill, active && { backgroundColor: col + '20', borderColor: col }]}
+                    onPress={() => setTrackCondition(c)} activeOpacity={0.75}>
+                    <View style={[s.condPillDot, { backgroundColor: active ? col : COLORS.textMuted }]} />
+                    <Text style={[s.condBtnText, active && { color: col, fontWeight: '800' }]}>{c}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          </View>
+          </SectionCard>
 
-          {/* ── Pressão Atm & Vento ─── */}
-          <View style={s.row}>
-            <View style={s.halfField}>
-              <Text style={s.label}>📊 Pressão Atm. (hPa)</Text>
-              <TextInput style={s.input} value={baroPressure} onChangeText={setBaroPressure}
-                keyboardType="decimal-pad" placeholder="1013" placeholderTextColor={COLORS.textMuted} />
+          {/* Card: Precipitação */}
+          <SectionCard title="PRECIPITAÇÃO" icon="🌧️">
+            <View style={s.condRow}>
+              {PRECIP_OPTIONS.map((p) => (
+                <TouchableOpacity key={p}
+                  style={[s.condBtn, precipitation === p && { backgroundColor: COLORS.cyan, borderColor: COLORS.cyan }]}
+                  onPress={() => setPrecipitation(p)} activeOpacity={0.75}>
+                  <Text style={[s.condBtnText, precipitation === p && { color: '#000', fontWeight: '800' }]}>{p}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={s.halfField}>
-              <Text style={s.label}>💨 Vento (km/h)</Text>
-              <TextInput style={s.input} value={wind} onChangeText={setWind}
-                keyboardType="decimal-pad" placeholder="0" placeholderTextColor={COLORS.textMuted} />
-            </View>
-          </View>
+          </SectionCard>
 
-          {/* ── Direção do Vento ─── */}
-          <Text style={s.label}>🧭 Direção do Vento</Text>
-          <View style={s.condRow}>
-            {WIND_DIRS.map((d) => (
-              <TouchableOpacity key={d}
-                style={[s.condBtn, windDir === d && { backgroundColor: COLORS.blue, borderColor: COLORS.blue }]}
-                onPress={() => setWindDir(d)}>
-                <Text style={[s.condBtnText, windDir === d && { color: '#fff' }]}>{d}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Card: Observações */}
+          <SectionCard title="OBSERVAÇÕES" icon="📝">
+            <TextInput
+              style={[inputStyle('notes'), s.textArea]} value={notes} onChangeText={setNotes}
+              placeholder="Ex: Neblina no setor 2" placeholderTextColor={COLORS.textMuted}
+              multiline numberOfLines={3}
+              onFocus={() => setInputFocus('notes')} onBlur={() => setInputFocus(null)}
+            />
+          </SectionCard>
 
-          {/* ── Condição da Pista ─── */}
-          <Text style={s.label}>🏁 Condição da Pista</Text>
-          <View style={s.condRow}>
-            {TRACK_CONDITIONS.map((c) => (
-              <TouchableOpacity key={c}
-                style={[s.condBtn, trackCondition === c && s.condBtnActive]}
-                onPress={() => setTrackCondition(c)}>
-                <Text style={[s.condBtnText, trackCondition === c && s.condBtnTextActive]}>{c}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Precipitação ─── */}
-          <Text style={s.label}>🌧️ Precipitação</Text>
-          <View style={s.condRow}>
-            {PRECIP_OPTIONS.map((p) => (
-              <TouchableOpacity key={p}
-                style={[s.condBtn, precipitation === p && { backgroundColor: COLORS.cyan, borderColor: COLORS.cyan }]}
-                onPress={() => setPrecipitation(p)}>
-                <Text style={[s.condBtnText, precipitation === p && { color: '#000' }]}>{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── Observações ─── */}
-          <Text style={s.label}>📝 Observações (opcional)</Text>
-          <TextInput
-            style={[s.input, s.textArea]} value={notes} onChangeText={setNotes}
-            placeholder="Ex: Neblina no setor 2" placeholderTextColor={COLORS.textMuted}
-            multiline numberOfLines={3}
-          />
-
+          {/* Submit */}
           <TouchableOpacity
             style={[s.submitBtn, (loading || !!submittedId) && s.submitBtnDisabled]}
-            onPress={handleSubmit} disabled={loading || !!submittedId}>
+            onPress={handleSubmit} disabled={loading || !!submittedId}
+            activeOpacity={0.82}>
             {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={s.submitBtnText}>📤 ENVIAR AO DESKTOP</Text>
+              ? <ActivityIndicator color="#fff" size="large" />
+              : <Text style={s.submitBtnText}>📤  ENVIAR AO DESKTOP</Text>
             }
           </TouchableOpacity>
         </ScrollView>
@@ -233,49 +315,113 @@ export default function TemperatureScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  scroll: { padding: 20, paddingBottom: 60 },
-  screenTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 16 },
-  profileBanner: {
-    backgroundColor: '#06d6a012', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: '#06d6a025', marginBottom: 12,
+  scroll: { padding: 16, paddingBottom: 64 },
+
+  /* Page header */
+  pageHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginBottom: 16,
   },
-  profileBannerText: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center' },
+  pageHeaderAccent: { width: 3, height: 32, backgroundColor: COLORS.accent, borderRadius: 2 },
+  screenSub: { fontSize: 10, color: COLORS.textMuted, letterSpacing: 0.5, marginTop: 1 },
+  screenTitle: {
+    fontSize: 13, fontWeight: '900', color: COLORS.textPrimary,
+    letterSpacing: 2, textTransform: 'uppercase',
+  },
+  screenIcon: { fontSize: 22 },
+
+  /* Profile */
   profileSelector: {
-    backgroundColor: '#06d6a008', borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: '#06d6a020', marginBottom: 12,
+    flexDirection: 'row', backgroundColor: COLORS.green + '10',
+    borderRadius: 14, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.green + '28', marginBottom: 14,
   },
-  profileSelectorLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  profileSelectorAccent: { width: 3, backgroundColor: COLORS.green },
+  profileSelectorInner: { flex: 1, padding: 14 },
+  profileSelectorLabel: {
+    fontSize: 9, color: COLORS.green, fontWeight: '800',
+    letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
+  },
+  profileBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.green + '10', borderRadius: 14,
+    borderWidth: 1, borderColor: COLORS.green + '28',
+    overflow: 'hidden', marginBottom: 14,
+  },
+  profileBannerAccent: { width: 3, alignSelf: 'stretch', backgroundColor: COLORS.green },
+  profileBannerIcon: { fontSize: 18, paddingLeft: 10 },
+  profileBannerText: { flex: 1, color: COLORS.textSecondary, fontSize: 13, paddingVertical: 12, paddingRight: 14 },
+
+  /* Status banner */
+  statusBanner: {
+    borderRadius: 14, padding: 16, marginBottom: 14, alignItems: 'center',
+    borderWidth: 1,
+  },
+  statusBannerText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  newMeasBtn: {
+    marginTop: 12, paddingHorizontal: 20, paddingVertical: 9,
+    borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.bgCard,
+  },
+  newMeasBtnText: { color: COLORS.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+
+  /* Section card */
+  sectionCard: {
+    backgroundColor: COLORS.bgCard, borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: COLORS.border, marginBottom: 12,
+    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18, shadowRadius: 5,
+  },
+  sectionCardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bgElevated,
+  },
+  sectionCardAccent: { width: 3, height: 16, backgroundColor: COLORS.accent, borderRadius: 2 },
+  sectionCardTitle: {
+    fontSize: 11, fontWeight: '800', color: COLORS.textMuted,
+    letterSpacing: 2, textTransform: 'uppercase',
+  },
+  sectionCardBody: { padding: 16 },
+
+  /* Form fields */
   row: { flexDirection: 'row', gap: 12 },
   halfField: { flex: 1 },
   label: {
-    color: COLORS.textMuted, fontSize: 11, letterSpacing: 1.2,
-    textTransform: 'uppercase', marginTop: 14, marginBottom: 6,
+    color: COLORS.textMuted, fontSize: 10, letterSpacing: 1.2,
+    textTransform: 'uppercase', marginTop: 4, marginBottom: 6, fontWeight: '700',
   },
   input: {
-    backgroundColor: COLORS.bgCard, borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
-    color: COLORS.textPrimary, fontSize: 18, fontWeight: '600',
+    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
+    color: COLORS.textPrimary, fontSize: 20, fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
-  textArea: { fontSize: 15, fontWeight: '400', height: 80, textAlignVertical: 'top' },
+  inputFocused: { borderColor: COLORS.accent, borderWidth: 1.5 },
+  textArea: { fontSize: 15, fontWeight: '400', minHeight: 80, textAlignVertical: 'top' },
+
+  /* Condition buttons */
   condRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   condBtn: {
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
-    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bgCard,
+    paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg,
   },
-  condBtnActive: { backgroundColor: COLORS.orange, borderColor: COLORS.orange },
   condBtnText: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
-  condBtnTextActive: { color: '#fff' },
+  condPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 14, paddingVertical: 11, borderRadius: 20,
+    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.bg,
+  },
+  condPillDot: { width: 7, height: 7, borderRadius: 4 },
+
+  /* Submit */
   submitBtn: {
-    marginTop: 28, backgroundColor: COLORS.accent,
-    borderRadius: 14, paddingVertical: 18, alignItems: 'center',
+    marginTop: 8, backgroundColor: COLORS.accent,
+    borderRadius: 14, paddingVertical: 20, alignItems: 'center',
+    elevation: 6, shadowColor: COLORS.accent,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10,
   },
   submitBtnDisabled: { opacity: 0.5 },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
-  statusBanner: { borderRadius: 12, padding: 16, marginBottom: 12, alignItems: 'center' },
-  statusBannerText: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '600', textAlign: 'center' },
-  newMeasBtn: {
-    marginTop: 10, paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 8, borderWidth: 1, borderColor: COLORS.border,
-  },
-  newMeasBtnText: { color: COLORS.textMuted, fontSize: 13 },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 2 },
 });

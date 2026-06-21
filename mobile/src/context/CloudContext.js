@@ -37,8 +37,12 @@ export function CloudProvider({ children }) {
   const [deviceId,   setDeviceId]   = useState(null);
   const [membership, setMembership] = useState(null);      // { team_id, team_name, role, status, device_type }
   const [profile,    setProfile]    = useState(null);      // { apexHash, role } do login
+  const [cars,       setCars]       = useState([]);        // Perfis/Carros da equipe (id, name, number)
 
   const pollRef = useRef(null);
+
+  // Mapeia a categoria das telas (pt) para a do servidor.
+  const CATEGORY_MAP = { pressoes: 'pressures', temperaturas: 'temperatures', timer: 'timer' };
 
   /* ── deviceId estável (reusa o do app, se já existir) ── */
   useEffect(() => {
@@ -96,13 +100,43 @@ export function CloudProvider({ children }) {
     await cloud.clearToken();
     setMembership(null);
     setProfile(null);
+    setCars([]);
     setStage('login');
   }, []);
 
+  /** Carrega os carros (Perfis) da equipe — usado pelas telas de medição. */
+  const loadCars = useCallback(async () => {
+    try {
+      const res = await cloud.getCars();
+      if (res?.success && Array.isArray(res.cars)) setCars(res.cars);
+    } catch { /* offline — mantém lista atual */ }
+  }, []);
+
+  /**
+   * Envia uma medição à nuvem. Mantém a MESMA assinatura da versão LAN
+   * (category, label, payload, targetCarId) para as telas trocarem só a
+   * fonte. Retorna o id da submissão ou null.
+   */
+  const submitMeasurement = useCallback(async (category, label, payload, targetCarId) => {
+    const cat = CATEGORY_MAP[category] || category;
+    try {
+      const res = await cloud.submitMeasurement({
+        teamId: membership?.team_id,
+        targetCarId: targetCarId || null,
+        category: cat,
+        payload: { label, ...payload },
+      });
+      return res?.id || null;
+    } catch {
+      return null; // offline → Etapa 6 (fila otimista) cobrirá
+    }
+  }, [membership]);
+
   return (
     <CloudContext.Provider value={{
-      stage, deviceId, membership, profile,
+      stage, deviceId, membership, profile, cars,
       refresh, onLoginSuccess, join, logout,
+      loadCars, submitMeasurement,
     }}>
       {children}
     </CloudContext.Provider>
