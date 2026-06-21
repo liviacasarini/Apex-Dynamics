@@ -44,6 +44,8 @@ export function CloudProvider({ children }) {
   const chatPollRef = useRef(null);
   const chatSinceRef = useRef(null);
   const usernameRef = useRef(null);
+  const queueRef    = useRef([]);   // fila offline otimista (medições + chat)
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
 
   // Mapeia a categoria das telas (pt) para a do servidor.
   const CATEGORY_MAP = { pressoes: 'pressures', temperaturas: 'temperatures', timer: 'timer' };
@@ -123,17 +125,20 @@ export function CloudProvider({ children }) {
     try {
       await cloud.sendChat(text.trim());
       await loadMessages(); // traz a mensagem recém-enviada (marcada como própria)
-    } catch { /* offline → Etapa 6 */ }
-  }, [loadMessages]);
+    } catch (e) {
+      if (e?.offline) await enqueue({ kind: 'chat', text: text.trim() });
+    }
+  }, [loadMessages, enqueue]);
 
   // Polling de chat enquanto ativo na equipe.
   useEffect(() => {
     if (stage === 'active') {
+      flushQueue();
       loadMessages();
-      chatPollRef.current = setInterval(loadMessages, 10000);
+      chatPollRef.current = setInterval(() => { flushQueue(); loadMessages(); }, 10000);
     }
     return () => { if (chatPollRef.current) { clearInterval(chatPollRef.current); chatPollRef.current = null; } };
-  }, [stage, loadMessages]);
+  }, [stage, loadMessages, flushQueue]);
 
   const join = useCallback(async (joinToken) => {
     const res = await cloud.joinWorkspace(joinToken, 'mobile', deviceId);
@@ -152,6 +157,46 @@ export function CloudProvider({ children }) {
     setStage('login');
   }, []);
 
+  /* ── Fila offline otimista (Etapa 6) ── */
+  const persistQueue = useCallback(async () => {
+    setPendingQueueCount(queueRef.current.length);
+    try { await AsyncStorage.setItem('cloudQueue', JSON.stringify(queueRef.current)); } catch { /* ignore */ }
+  }, []);
+
+  const enqueue = useCallback(async (item) => {
+    queueRef.current.push(item);
+    await persistQueue();
+  }, [persistQueue]);
+
+  /** Reenvia a fila em ordem; para no 1º erro de rede (offline), descarta erro permanente. */
+  const flushQueue = useCallback(async () => {
+    let i = 0;
+    let sent = 0;
+    while (i < queueRef.current.length) {
+      const item = queueRef.current[i];
+      try {
+        if (item.kind === 'measurement') await cloud.submitMeasurement(item.payload);
+        else if (item.kind === 'chat')   await cloud.sendChat(item.text);
+        queueRef.current.splice(i, 1); // enviado → remove
+        sent++;
+      } catch (e) {
+        if (e?.offline) break;          // ainda offline → mantém este e o resto
+        queueRef.current.splice(i, 1);  // erro permanente (400/403) → descarta
+      }
+    }
+    if (sent > 0) await persistQueue(); else setPendingQueueCount(queueRef.current.length);
+    return sent;
+  }, [persistQueue]);
+
+  // Carrega a fila persistida no boot.
+  useEffect(() => {
+    (async () => {
+      const raw = await AsyncStorage.getItem('cloudQueue');
+      if (raw) { try { queueRef.current = JSON.parse(raw) || []; } catch { queueRef.current = []; } }
+      setPendingQueueCount(queueRef.current.length);
+    })();
+  }, []);
+
   /** Carrega os carros (Perfis) da equipe — usado pelas telas de medição. */
   const loadCars = useCallback(async () => {
     try {
@@ -167,18 +212,20 @@ export function CloudProvider({ children }) {
    */
   const submitMeasurement = useCallback(async (category, label, payload, targetCarId) => {
     const cat = CATEGORY_MAP[category] || category;
+    const body = {
+      teamId: membership?.team_id,
+      targetCarId: targetCarId || null,
+      category: cat,
+      payload: { label, ...payload },
+    };
     try {
-      const res = await cloud.submitMeasurement({
-        teamId: membership?.team_id,
-        targetCarId: targetCarId || null,
-        category: cat,
-        payload: { label, ...payload },
-      });
+      const res = await cloud.submitMeasurement(body);
       return res?.id || null;
-    } catch {
-      return null; // offline → Etapa 6 (fila otimista) cobrirá
+    } catch (e) {
+      if (e?.offline) { await enqueue({ kind: 'measurement', payload: body }); return 'queued'; }
+      return null; // erro permanente
     }
-  }, [membership]);
+  }, [membership, enqueue]);
 
   return (
     <CloudContext.Provider value={{
@@ -186,6 +233,7 @@ export function CloudProvider({ children }) {
       refresh, onLoginSuccess, join, logout,
       loadCars, submitMeasurement,
       chatMessages, sendChat, loadMessages,
+      pendingQueueCount, flushQueue,
     }}>
       {children}
     </CloudContext.Provider>
