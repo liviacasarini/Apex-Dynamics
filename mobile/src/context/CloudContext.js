@@ -38,8 +38,12 @@ export function CloudProvider({ children }) {
   const [membership, setMembership] = useState(null);      // { team_id, team_name, role, status, device_type }
   const [profile,    setProfile]    = useState(null);      // { apexHash, role } do login
   const [cars,       setCars]       = useState([]);        // Perfis/Carros da equipe (id, name, number)
+  const [chatMessages, setChatMessages] = useState([]);    // mensagens normalizadas p/ o ChatScreen
 
-  const pollRef = useRef(null);
+  const pollRef     = useRef(null);
+  const chatPollRef = useRef(null);
+  const chatSinceRef = useRef(null);
+  const usernameRef = useRef(null);
 
   // Mapeia a categoria das telas (pt) para a do servidor.
   const CATEGORY_MAP = { pressoes: 'pressures', temperaturas: 'temperatures', timer: 'timer' };
@@ -83,9 +87,53 @@ export function CloudProvider({ children }) {
 
   /* ── Ações ── */
   const onLoginSuccess = useCallback(async (data) => {
-    setProfile({ apexHash: data?.apexHash, role: data?.role });
+    usernameRef.current = data?.username || null;
+    setProfile({ apexHash: data?.apexHash, role: data?.role, username: data?.username });
     await refresh();
   }, [refresh]);
+
+  /* ── Chat (cloud) ── */
+  const normalizeChat = useCallback((m) => {
+    const own = usernameRef.current && m.sender_name === usernameRef.current;
+    return {
+      id: `c-${m.id}`,
+      type: 'chat',
+      from: { deviceId: own ? deviceId : 'cloud', name: m.sender_name || 'Equipe', role: null },
+      content: { text: m.content },
+      timestamp: m.created_at,
+    };
+  }, [deviceId]);
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const res = await cloud.getMessages(chatSinceRef.current, 50);
+      if (!res?.success || !Array.isArray(res.messages) || res.messages.length === 0) return;
+      const norm = res.messages.map(normalizeChat);
+      setChatMessages(prev => {
+        const seen = new Set(prev.map(p => p.id));
+        const toAdd = norm.filter(n => !seen.has(n.id));
+        return toAdd.length ? [...prev, ...toAdd] : prev;
+      });
+      chatSinceRef.current = res.messages[res.messages.length - 1].created_at;
+    } catch { /* offline */ }
+  }, [normalizeChat]);
+
+  const sendChat = useCallback(async (text) => {
+    if (!text?.trim()) return;
+    try {
+      await cloud.sendChat(text.trim());
+      await loadMessages(); // traz a mensagem recém-enviada (marcada como própria)
+    } catch { /* offline → Etapa 6 */ }
+  }, [loadMessages]);
+
+  // Polling de chat enquanto ativo na equipe.
+  useEffect(() => {
+    if (stage === 'active') {
+      loadMessages();
+      chatPollRef.current = setInterval(loadMessages, 10000);
+    }
+    return () => { if (chatPollRef.current) { clearInterval(chatPollRef.current); chatPollRef.current = null; } };
+  }, [stage, loadMessages]);
 
   const join = useCallback(async (joinToken) => {
     const res = await cloud.joinWorkspace(joinToken, 'mobile', deviceId);
@@ -137,6 +185,7 @@ export function CloudProvider({ children }) {
       stage, deviceId, membership, profile, cars,
       refresh, onLoginSuccess, join, logout,
       loadCars, submitMeasurement,
+      chatMessages, sendChat, loadMessages,
     }}>
       {children}
     </CloudContext.Provider>
