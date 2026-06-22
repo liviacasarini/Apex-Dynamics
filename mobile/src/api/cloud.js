@@ -148,6 +148,23 @@ export function getMessages(since, limit = 50) {
   return request('GET', `/api/team/messages${q}`);
 }
 
+/* ── Presença + Tarefas ─────────────────────────────────────────── */
+
+/** Marca presença do membro: 'presente' | 'ausente'. */
+export function markAttendance(status) {
+  return request('POST', '/api/team/attendance', { status });
+}
+
+/** Tarefas da equipe (resposta: { tasks, me }). */
+export function getTasks() {
+  return request('GET', '/api/team/tasks');
+}
+
+/** Conclui (ou reabre) uma tarefa. */
+export function completeTask(id, done = true) {
+  return request('POST', `/api/team/tasks/${id}/done`, { done });
+}
+
 /* ── Emergência ────────────────────────────────────────────────── */
 
 export function triggerEmergency(reason) {

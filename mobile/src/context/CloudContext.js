@@ -266,6 +266,7 @@ export function CloudProvider({ children }) {
       refresh, onLoginSuccess, join, registerAndJoin, logout,
       loadCars, submitMeasurement, getMeasurementStatus: cloud.getMeasurementStatus,
       getChecklist: cloud.getChecklist, checkChecklistItem: cloud.checkChecklistItem,
+      markAttendance: cloud.markAttendance, getTasks: cloud.getTasks, completeTask: cloud.completeTask,
       chatMessages, sendChat, loadMessages,
       pendingQueueCount, flushQueue,
     }}>

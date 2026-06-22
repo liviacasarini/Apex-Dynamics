@@ -18,6 +18,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import TemperatureScreen from './src/screens/TemperatureScreen';
 import PressuresScreen from './src/screens/PressuresScreen';
 import ChecklistScreen from './src/screens/ChecklistScreen';
+import TasksScreen from './src/screens/TasksScreen';
 import TimerScreen from './src/screens/TimerScreen';
 import ChatScreen from './src/screens/ChatScreen';
 
@@ -29,6 +30,7 @@ const TAB_CONFIG = {
   Temperature: { icon: '◉', label: 'Condições' },
   Pressures:   { icon: '◎', label: 'Pressões' },
   Checklist:   { icon: '☑', label: 'Checklist' },
+  Tarefas:     { icon: '⚑', label: 'Tarefas' },
   Timer:       { icon: '◷', label: 'Timer' },
   Chat:        { icon: '◈', label: 'Chat' },
 };
@@ -77,6 +79,7 @@ function MainTabs() {
       <Tab.Screen name="Temperature" component={TemperatureScreen} />
       <Tab.Screen name="Pressures" component={PressuresScreen} />
       <Tab.Screen name="Checklist" component={ChecklistScreen} />
+      <Tab.Screen name="Tarefas" component={TasksScreen} />
       <Tab.Screen name="Timer" component={TimerScreen} />
       <Tab.Screen name="Chat" component={ChatScreen} />
     </Tab.Navigator>
