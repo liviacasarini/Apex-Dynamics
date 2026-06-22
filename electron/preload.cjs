@@ -215,4 +215,12 @@ contextBridge.exposeInMainWorld('cloudTeamAPI', {
 
   /** Exporta um HTML de relatório como PDF (printToPDF no main, salva onde o usuário escolher). */
   exportReportPdf:        ({ html, suggestedName }) => ipcRenderer.invoke('report:exportPdf', { html, suggestedName }),
+
+  /* ── Presença + Tarefas ── */
+  getAttendance:          ()              => ipcRenderer.invoke('cloud:getAttendance'),
+  markAttendance:         (status)        => ipcRenderer.invoke('cloud:markAttendance', { status }),
+  getTasks:               ()              => ipcRenderer.invoke('cloud:getTasks'),
+  createTask:             (t)             => ipcRenderer.invoke('cloud:createTask', t),
+  completeTask:           (id, done)      => ipcRenderer.invoke('cloud:completeTask', { id, done }),
+  deleteTask:             (id)            => ipcRenderer.invoke('cloud:deleteTask', { id }),
 });

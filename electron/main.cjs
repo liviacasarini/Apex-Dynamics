@@ -1519,6 +1519,14 @@ ipcMain.handle('cloud:deleteChecklistItem', (_e, { id }) => cloudRequest('DELETE
 ipcMain.handle('cloud:checkChecklistItem', (_e, { carId, itemId, checked }) => cloudRequest('POST', '/api/team/checklist/check', { carId, itemId, checked }));
 ipcMain.handle('cloud:resetChecklist', (_e, { carId }) => cloudRequest('POST', '/api/team/checklist/reset', { carId }));
 
+/* ── Presença (roll call) + Tarefas ── */
+ipcMain.handle('cloud:getAttendance',  () => cloudRequest('GET',  '/api/team/attendance'));
+ipcMain.handle('cloud:markAttendance', (_e, { status }) => cloudRequest('POST', '/api/team/attendance', { status }));
+ipcMain.handle('cloud:getTasks',       () => cloudRequest('GET',  '/api/team/tasks'));
+ipcMain.handle('cloud:createTask',     (_e, t) => cloudRequest('POST', '/api/team/tasks', t || {}));
+ipcMain.handle('cloud:completeTask',   (_e, { id, done }) => cloudRequest('POST', `/api/team/tasks/${id}/done`, { done }));
+ipcMain.handle('cloud:deleteTask',     (_e, { id }) => cloudRequest('DELETE', `/api/team/tasks/${id}`));
+
 /* ── Relatório → PDF (renderiza um HTML dedicado num BrowserWindow oculto e
  *    usa webContents.printToPDF; salva onde o usuário escolher e abre). ── */
 ipcMain.handle('report:exportPdf', async (_e, { html, suggestedName }) => {

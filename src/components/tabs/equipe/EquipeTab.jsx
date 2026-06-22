@@ -113,6 +113,13 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
   const [newItemLabel,      setNewItemLabel]      = useState('');
   const [newItemScope,      setNewItemScope]      = useState('universal'); // 'universal' | 'car'
 
+  // Cloud: Presença (roll call) + Tarefas
+  const [attendance,   setAttendance]  = useState([]);
+  const [tasks,        setTasks]       = useState([]);
+  const [taskTitle,    setTaskTitle]   = useState('');
+  const [taskAssignee, setTaskAssignee] = useState('');
+  const [taskCar,      setTaskCar]     = useState('');
+
   // Apenas o chefe possui join token → usado como gate para deletar medições.
   const isChefe = !!joinTokenInfo?.joinToken;
 
@@ -195,6 +202,38 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
     }, 8000);
     return () => clearInterval(iv);
   }, [activeSection, checklistCarId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Presença + Tarefas: carrega ao abrir a seção e faz polling a cada 10s.
+  useEffect(() => {
+    if (activeSection !== 'tarefas') return;
+    loadAttendance(); loadTasks();
+    const iv = setInterval(() => { loadAttendance(); loadTasks(); }, 10000);
+    return () => clearInterval(iv);
+  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadAttendance() {
+    try { const r = await window.cloudTeamAPI?.getAttendance(); if (r?.success) setAttendance(r.attendance || []); } catch { /* noop */ }
+  }
+  async function loadTasks() {
+    try { const r = await window.cloudTeamAPI?.getTasks(); if (r?.success) setTasks(r.tasks || []); } catch { /* noop */ }
+  }
+  async function handleCreateTask() {
+    const title = taskTitle.trim();
+    if (!title) return;
+    try {
+      const r = await window.cloudTeamAPI?.createTask({ title, assignedTo: taskAssignee || null, carId: taskCar || null });
+      if (r?.success) { setTaskTitle(''); setTaskAssignee(''); setTaskCar(''); loadTasks(); }
+      else window.alert(r?.message || 'Erro ao criar tarefa.');
+    } catch (e) { console.error('Create task error:', e); }
+  }
+  async function handleCompleteTask(id, done) {
+    try { const r = await window.cloudTeamAPI?.completeTask(id, done); if (r && !r.success) window.alert(r.message || 'Não foi possível concluir.'); loadTasks(); }
+    catch (e) { console.error('Complete task error:', e); }
+  }
+  async function handleDeleteTask(id) {
+    if (!window.confirm('Excluir esta tarefa?')) return;
+    try { await window.cloudTeamAPI?.deleteTask(id); loadTasks(); } catch (e) { console.error('Delete task error:', e); }
+  }
 
   async function loadAllMeasurements() {
     setMeasLoading(true);
@@ -535,6 +574,7 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
     { key: 'dispositivos',  label: `📱 Dispositivos ${(deviceMembers.length + devices.length) > 0 ? `(${deviceMembers.length + devices.length})` : ''}` },
     { key: 'notificacoes',  label: `🔔 Medições ${(pendingCount + (cloudMeasurements?.length || 0)) > 0 ? `(${pendingCount + (cloudMeasurements?.length || 0)})` : ''}` },
     { key: 'checklist',     label: '✅ Checklist' },
+    { key: 'tarefas',       label: `📋 Tarefas ${tasks.filter(t => t.status !== 'concluida').length > 0 ? `(${tasks.filter(t => t.status !== 'concluida').length})` : ''}` },
     { key: 'chat',          label: `💬 Chat ${unreadChat > 0 ? `(${unreadChat})` : ''}` },
     { key: 'visao-geral',   label: '📊 Visão Geral' },
     { key: 'sessao',        label: '🏁 Sessão' },
@@ -1505,6 +1545,90 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Seção: Tarefas + Presença (Cloud) ─── */}
+      {activeSection === 'tarefas' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Presença */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>🟢 Presença no autódromo</div>
+            {attendance.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.textMuted }}>Ninguém marcou presença ainda. (Os membros marcam “Cheguei” no app mobile.)</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {attendance.map(a => (
+                  <div key={a.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8,
+                    background: `${C.bgCard}80`, border: `1px solid ${(a.status === 'presente' ? C.green : C.textMuted)}40` }}>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: a.status === 'presente' ? C.green : C.textMuted }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{a.username || '—'}</span>
+                    <span style={{ fontSize: 11, color: C.textMuted }}>{a.status === 'presente' ? 'presente' : 'ausente'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tarefas */}
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>📋 Tarefas</div>
+            {isChefe && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateTask(); }}
+                  placeholder="Nova tarefa…" style={{ ...INPUT_STYLE, flex: '1 1 200px' }} />
+                <select value={taskAssignee} onChange={e => setTaskAssignee(e.target.value)} style={{ ...INPUT_STYLE, flex: '0 1 170px' }}>
+                  <option value="">Atribuir a…</option>
+                  {(cloudMembers || []).filter(m => m.user_id).map(m => (
+                    <option key={m.user_id} value={m.user_id}>{m.username || m.label || '—'}</option>
+                  ))}
+                </select>
+                <select value={taskCar} onChange={e => setTaskCar(e.target.value)} style={{ ...INPUT_STYLE, flex: '0 1 150px' }}>
+                  <option value="">Carro (opcional)</option>
+                  {(cloudCars || []).map(c => (
+                    <option key={c.id} value={c.id}>{c.number != null ? `#${c.number} ` : ''}{c.name}</option>
+                  ))}
+                </select>
+                <button onClick={handleCreateTask} disabled={!taskTitle.trim()} style={{
+                  padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: taskTitle.trim() ? 'pointer' : 'not-allowed',
+                  background: `${C.accent}22`, color: C.accent, border: `1px solid ${C.accent}55`, opacity: taskTitle.trim() ? 1 : 0.5 }}>+ Criar</button>
+              </div>
+            )}
+            {tasks.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.textMuted }}>Nenhuma tarefa.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {tasks.map(t => {
+                  const done = t.status === 'concluida';
+                  const car  = (cloudCars || []).find(c => c.id === t.car_id);
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9,
+                      background: `${C.bgCard}60`, border: `1px solid ${C.border}22`, opacity: done ? 0.6 : 1 }}>
+                      <span style={{ fontSize: 16 }}>{done ? '✅' : '⬜'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary, textDecoration: done ? 'line-through' : 'none' }}>{t.title}</div>
+                        <div style={{ fontSize: 11, color: C.textMuted }}>
+                          {t.assigned_to_name ? `👤 ${t.assigned_to_name}` : 'sem responsável'}
+                          {car ? ` · 🏎️ ${car.number != null ? `#${car.number} ` : ''}${car.name}` : ''}
+                          {t.created_by_name ? ` · por ${t.created_by_name}` : ''}
+                        </div>
+                      </div>
+                      {!done && (
+                        <button onClick={() => handleCompleteTask(t.id, true)} style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                          background: `${C.green}18`, color: C.green, border: `1px solid ${C.green}40` }}>Concluir</button>
+                      )}
+                      {isChefe && (
+                        <button onClick={() => handleDeleteTask(t.id)} title="Excluir" style={{ padding: '5px 9px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                          background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>🗑️</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
