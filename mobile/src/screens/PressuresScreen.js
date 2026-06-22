@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp, COLORS, ROLE_LABELS } from '../context/AppContext';
 import { useCloud } from '../context/CloudContext';
@@ -24,8 +25,10 @@ const EMPTY_PRESSURES = { FL: { fria: '', quente: '' }, FR: { fria: '', quente: 
 
 export default function PressuresScreen() {
   const { notifications } = useApp();
-  const { cars: assignedProfiles, submitMeasurement, loadCars } = useCloud();
-  useEffect(() => { loadCars(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const { cars: assignedProfiles, submitMeasurement, loadCars, getMeasurementStatus } = useCloud();
+  // Recarrega os carros sempre que a tela ganha foco → renomeações feitas
+  // no desktop chefe aparecem na hora.
+  useFocusEffect(useCallback(() => { loadCars(); }, [loadCars]));
   const [selectedProfileIdx, setSelectedProfileIdx] = useState(0);
 
   const [measureType, setMeasureType] = useState('ambas');
@@ -35,8 +38,28 @@ export default function PressuresScreen() {
   const [loading,     setLoading]     = useState(false);
   const [inputFocus,  setInputFocus]  = useState(null);
 
+  // Status via polling na nuvem (o modelo nuvem não tem o push em tempo real da LAN).
+  const [cloudStatus, setCloudStatus] = useState(null); // 'measurement:approved' | 'measurement:dismissed' | null
+  useEffect(() => {
+    setCloudStatus(null);
+    if (!submittedId || submittedId === 'queued' || !getMeasurementStatus) return;
+    let cancelled = false;
+    let iv = null;
+    const tick = async () => {
+      try {
+        const r = await getMeasurementStatus(submittedId);
+        if (cancelled || !r?.success) return;
+        if (r.status === 'approved')  { setCloudStatus('measurement:approved');  if (iv) clearInterval(iv); }
+        if (r.status === 'dismissed') { setCloudStatus('measurement:dismissed'); if (iv) clearInterval(iv); }
+      } catch { /* offline — tenta no próximo tick */ }
+    };
+    tick();
+    iv = setInterval(tick, 6000);
+    return () => { cancelled = true; if (iv) clearInterval(iv); };
+  }, [submittedId, getMeasurementStatus]);
+
   const submitted  = submittedId ? notifications.find((n) => n.measurementId === submittedId) : null;
-  const statusType = submitted?.type;
+  const statusType = cloudStatus || submitted?.type;
 
   function updatePressure(pos, type, val) {
     setPressures((prev) => ({ ...prev, [pos]: { ...prev[pos], [type]: val } }));
@@ -125,7 +148,15 @@ export default function PressuresScreen() {
                 Perfil: <Text style={{ color: COLORS.green, fontWeight: '900' }}>{assignedProfiles[0].name}</Text>
               </Text>
             </View>
-          ) : null}
+          ) : (
+            <View style={st.profileBanner}>
+              <View style={[st.profileBannerAccent, { backgroundColor: '#f0a020' }]} />
+              <Text style={st.profileBannerIcon}>⚠️</Text>
+              <Text style={st.profileBannerText}>
+                Nenhum perfil disponível. Peça ao chefe para sincronizar os perfis no desktop (Equipe → Visão Geral). A medição será enviada sem perfil.
+              </Text>
+            </View>
+          )}
 
           {/* Status banner */}
           {submittedId && (

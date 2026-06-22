@@ -189,10 +189,14 @@ export function CloudProvider({ children }) {
     })();
   }, [stage]);
 
-  const registerAndJoin = useCallback(async ({ joinToken, username, phone, password }) => {
-    const res = await cloud.registerAndJoin({ joinToken, username, phone, password, deviceId });
+  const registerAndJoin = useCallback(async ({ joinToken, username, phone, password, acceptedLegalVersion }) => {
+    const res = await cloud.registerAndJoin({ joinToken, username, phone, password, deviceId, acceptedLegalVersion });
     if (res?.success) {
       usernameRef.current = res.username;
+      // Prova local do aceite (versão + data) — complementa o registro no servidor.
+      try {
+        await AsyncStorage.setItem('acceptedLegal', JSON.stringify({ version: acceptedLegalVersion, at: new Date().toISOString() }));
+      } catch { /* ignore */ }
       setProfile({ apexHash: res.apexHash, role: 'user', username: res.username });
       setMembership({ team_id: res.teamId, team_name: res.teamName, status: res.status, device_type: 'mobile' });
       setStage(res.status === 'active' ? 'active' : 'pending');
@@ -260,7 +264,8 @@ export function CloudProvider({ children }) {
     <CloudContext.Provider value={{
       stage, deviceId, membership, profile, cars,
       refresh, onLoginSuccess, join, registerAndJoin, logout,
-      loadCars, submitMeasurement,
+      loadCars, submitMeasurement, getMeasurementStatus: cloud.getMeasurementStatus,
+      getChecklist: cloud.getChecklist, checkChecklistItem: cloud.checkChecklistItem,
       chatMessages, sendChat, loadMessages,
       pendingQueueCount, flushQueue,
     }}>

@@ -49,6 +49,20 @@ import PneusTruckTab from '@/components/tabs/pneus/PneusTruckTab';
 import RegulamentacoesTruckTab from '@/components/tabs/regulamentacoes/RegulamentacoesTruckTab';
 import PesoTruckTab from '@/components/tabs/peso/PesoTruckTab';
 
+/* ── Gate anti-duplicata p/ medições da nuvem aplicadas localmente ─────
+ * Cada máquina lembra (localStorage) quais submissões (por id) já viraram
+ * registro local, para não duplicar quando o evento SSE de aprovação chega
+ * em todos os desktops — inclusive no que aprovou. */
+const APPLIED_KEY   = 'apex_applied_measurements';
+const BASELINE_KEY  = 'apex_applied_baseline';
+function loadAppliedSet() {
+  try { return new Set((JSON.parse(localStorage.getItem(APPLIED_KEY) || '[]')).map(String)); }
+  catch { return new Set(); }
+}
+function persistAppliedSet(set) {
+  try { localStorage.setItem(APPLIED_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
 /* ── Canais monitorados para alertas de vitals ──────────────────────── */
 const VITAL_CHANNELS_CAR = [
   { key: 'engineTemp',       label: 'Temp. Água'          },
@@ -99,11 +113,30 @@ export default function App() {
 
 function AppInner() {
   const COLORS = useColors();
-  const { pendingCount, unreadChat, markChatRead, setTeamTabOpen, deviceAssignments } = useTeam();
+  const { pendingCount, unreadChat, markChatRead, setTeamTabOpen, deviceAssignments, joinTokenInfo, applyApprovedRef } = useTeam();
 
   /* ── Workspace + perfis ─────────────────────────────────────────── */
   const profiles = useWorkspaces();
   const wsId = profiles.activeWorkspaceId;
+
+  /* ── Sync dos Perfis → carros da nuvem (somente o desktop CHEFE) ──
+   * joinTokenInfo só é preenchido para chefes (o servidor nega o resto),
+   * então usamos como gate. Debounce evita rajada em renomeações rápidas. */
+  const _carsSig = (profiles.profiles || [])
+    .map(p => `${p.id}:${p.name}:${p.number ?? ''}:${p.color ?? ''}`).join('|');
+  useEffect(() => {
+    if (!joinTokenInfo?.joinToken) return;        // não é chefe → não sincroniza
+    if (!window.cloudTeamAPI?.syncCars) return;
+    const payload = (profiles.profiles || []).map(p => ({
+      clientId: p.id, name: p.name, number: p.number ?? null, color: p.color ?? null,
+    }));
+    const t = setTimeout(() => {
+      window.cloudTeamAPI.syncCars(payload)
+        .then(r => { if (!r?.success) console.warn('[syncCars] falhou:', r?.message); })
+        .catch(e => console.warn('[syncCars] erro:', e?.message || e));
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [_carsSig, joinTokenInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Telemetria (por workspace) ─────────────────────────────────── */
   const {
@@ -560,6 +593,148 @@ function AppInner() {
     }
   }, [wsId, profiles, deviceAssignments]);
 
+  /**
+   * Grava uma medição da NUVEM diretamente como registro na aba correta,
+   * roteando para o Perfil de origem (client_profile_id). Chamado quando um
+   * desktop APROVA uma medição enviada pelo mobile — o desktop é o
+   * centralizador. Pressões → tireSet do perfil; Temperaturas → tempLog.
+   * Retorna true se gravou, false caso contrário.
+   */
+  const handleApplyCloudRecord = useCallback((m) => {
+    if (!m) return false;
+
+    // Gate anti-duplicata: se esta submissão já virou registro nesta máquina, ignora.
+    const mid = String(m.id ?? '');
+    if (mid) {
+      const applied = loadAppliedSet();
+      if (applied.has(mid)) return false;
+    }
+
+    const p   = m.payload || {};
+    const cat = m.category;
+    const num = (v) => (v != null && v !== '' ? (parseFloat(v) || null) : null);
+
+    const markApplied = () => {
+      if (!mid) return;
+      const applied = loadAppliedSet();
+      applied.add(mid);
+      persistAppliedSet(applied);
+    };
+
+    // Resolve o perfil de destino: 1) UUID sincronizado (client_profile_id);
+    // 2) por NOME (carros têm o mesmo nome do perfil em todas as máquinas);
+    // 3) perfil ativo como último recurso. NÃO troca a visão do usuário —
+    // a aplicação acontece em todos os desktops em segundo plano.
+    let profileId = null;
+    if (m.client_profile_id && profiles.profiles.some(pr => pr.id === m.client_profile_id)) {
+      profileId = m.client_profile_id;
+    } else if (m.car_name) {
+      const byName = profiles.profiles.find(pr => pr.name === m.car_name);
+      if (byName) profileId = byName.id;
+    }
+    if (!profileId) profileId = profiles.activeProfileId;
+
+    const stamp = (() => { try { return new Date(m.created_at).toLocaleString('pt-BR'); } catch { return ''; } })();
+    const who   = m.submitter_name || 'Equipe';
+
+    if (cat === 'pressures' || cat === 'pressoes') {
+      const posMap = { FL: 'fl', FR: 'fr', RL: 'rl', RR: 'rr' };
+      const tyres = {};
+      if (p.tipo) tyres.measureType = p.tipo;
+      for (const [mob, desk] of Object.entries(posMap)) {
+        const cell = (p[mob] && typeof p[mob] === 'object') ? p[mob] : {};
+        tyres[desk] = {
+          cold: cell.fria   != null ? String(cell.fria)   : '',
+          hot:  cell.quente != null ? String(cell.quente) : '',
+          ideal: '', zoneInner: '', zoneCenter: '', zoneOuter: '',
+        };
+      }
+      const conditions = { notes: p.observacoes || '' };
+      const r = profiles.saveTireSet(`📱 ${who} · ${stamp}`, tyres, conditions, profileId);
+      if (r?.error) return false;
+      markApplied();
+      return true;
+    }
+
+    if (cat === 'temperatures' || cat === 'temperaturas' || cat === 'temperature') {
+      const condMap = { 'Seca': 'dry', 'Úmida': 'damp', 'Molhada': 'wet', 'Intermediária': 'intermediate' };
+      profiles.addTempLog({
+        date:          p.date || new Date().toISOString().slice(0, 10),
+        time:          p.time || stamp.slice(-8, -3),
+        track:         num(p.tempPista),
+        ambient:       num(p.tempAmbiente),
+        humidity:      num(p.umidade),
+        altitude:      num(p.altitude),
+        baroPressure:  num(p.pressaoAtm),
+        windSpeed:     num(p.vento),
+        windDir:       (p.direcaoVento && p.direcaoVento !== '—') ? p.direcaoVento : null,
+        precipitation: (p.precipitacao && p.precipitacao !== '—')
+                         ? p.precipitacao
+                         : (p.condicaoPista ? (condMap[p.condicaoPista] || p.condicaoPista) : null),
+        source:        `mobile:${who}`,
+      });
+      markApplied();
+      return true;
+    }
+
+    return false; // timer ou categoria desconhecida → sem registro local
+  }, [profiles]);
+
+  /**
+   * Sincroniza TODAS as medições aprovadas da nuvem para registros locais.
+   * Idempotente (gate por id em handleApplyCloudRecord). Chamado pelo evento
+   * SSE 'measurement_approved' (tempo real) e na inicialização (catch-up de
+   * aprovações ocorridas enquanto este desktop estava fora do ar).
+   */
+  const syncApprovedMeasurements = useCallback(async () => {
+    if (!window.cloudTeamAPI?.getAllMeasurements) return;
+    try {
+      const res  = await window.cloudTeamAPI.getAllMeasurements();
+      const list = res?.measurements ?? res;
+      if (!Array.isArray(list)) return;
+      // Aplica do mais antigo para o mais novo (a lista vem em ordem decrescente).
+      for (const m of [...list].reverse()) {
+        if (m.status === 'approved') handleApplyCloudRecord(m);
+      }
+    } catch (e) {
+      console.error('syncApprovedMeasurements:', e);
+    }
+  }, [handleApplyCloudRecord]);
+
+  // Registra o sync no TeamContext para ser disparado pelo evento SSE.
+  useEffect(() => {
+    if (!applyApprovedRef) return;
+    applyApprovedRef.current = syncApprovedMeasurements;
+    return () => { applyApprovedRef.current = null; };
+  }, [applyApprovedRef, syncApprovedMeasurements]);
+
+  // Catch-up na inicialização. Na PRIMEIRA execução desta máquina, apenas
+  // estabelece a baseline (marca as aprovadas atuais como "já aplicadas" sem
+  // aplicá-las) para não duplicar registros pré-existentes; depois disso,
+  // aplica somente o que foi aprovado enquanto este desktop esteve fora.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!window.cloudTeamAPI?.getAllMeasurements) return;
+      const baselined = (() => { try { return localStorage.getItem(BASELINE_KEY); } catch { return null; } })();
+      if (!baselined) {
+        try {
+          const res  = await window.cloudTeamAPI.getAllMeasurements();
+          const list = res?.measurements ?? res;
+          if (!cancelled && Array.isArray(list)) {
+            const applied = loadAppliedSet();
+            list.forEach(m => { if (m.status === 'approved') applied.add(String(m.id)); });
+            persistAppliedSet(applied);
+          }
+          localStorage.setItem(BASELINE_KEY, '1');
+        } catch { /* tenta de novo no próximo boot */ }
+      } else if (!cancelled) {
+        syncApprovedMeasurements();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [syncApprovedMeasurements]);
+
   /* ═══════════════════════════════════════════════════════════════════
      Render
   ═══════════════════════════════════════════════════════════════════ */
@@ -962,6 +1137,7 @@ function AppInner() {
           {activeTab === 'equipe' && (
             <EquipeTab
               onApplyMeasurement={handleApplyMeasurement}
+              onApplyCloudRecord={handleApplyCloudRecord}
               profilesList={profiles.profiles}
             />
           )}

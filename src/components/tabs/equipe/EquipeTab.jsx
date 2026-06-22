@@ -52,7 +52,7 @@ function fmtDateTime(iso) {
   catch { return iso; }
 }
 
-export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
+export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, profilesList = [] }) {
   const COLORS = useColors();
   const theme  = makeTheme(COLORS);
   const {
@@ -89,6 +89,29 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
   const [newSessionName,    setNewSessionName]    = useState('');
   const [sessionFeedback,   setSessionFeedback]   = useState('');
 
+  // Cloud: Dispositivos (membros da nuvem — substitui o conceito LAN)
+  const [deviceMembers,     setDeviceMembers]     = useState([]);
+  const [devLoading,        setDevLoading]        = useState(false);
+
+  // Cloud: Medições (histórico completo — uma lista, sem sobrescrever)
+  const [allMeasurements,   setAllMeasurements]   = useState([]);
+  const [measLoading,       setMeasLoading]       = useState(false);
+
+  // Cloud: sincronização de Perfis → carros (chefe)
+  const [syncing,           setSyncing]           = useState(false);
+  const [syncMsg,           setSyncMsg]           = useState('');
+
+  // Cloud: Checklist
+  const [checklistOverview, setChecklistOverview] = useState([]);
+  const [checklistCarId,    setChecklistCarId]    = useState(null);
+  const [checklistItems,    setChecklistItems]    = useState([]);
+  const [checklistLoading,  setChecklistLoading]  = useState(false);
+  const [newItemLabel,      setNewItemLabel]      = useState('');
+  const [newItemScope,      setNewItemScope]      = useState('universal'); // 'universal' | 'car'
+
+  // Apenas o chefe possui join token → usado como gate para deletar medições.
+  const isChefe = !!joinTokenInfo?.joinToken;
+
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -104,9 +127,40 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 
   useEffect(() => {
     if (activeSection === 'visao-geral') {
-      loadCloudOverview();
+      // Chefe: empurra os Perfis para a nuvem ao abrir (e depois carrega).
+      // Garante que o mobile veja os perfis mesmo que o sync automático não
+      // tenha disparado. Participante apenas carrega.
+      if (isChefe && profilesList.length > 0) {
+        syncProfilesToCloud().finally(() => loadCloudOverview());
+      } else {
+        loadCloudOverview();
+      }
     }
   }, [activeSection]);
+
+  // Sincroniza os Perfis do desktop → carros da nuvem (somente chefe).
+  // Diferente do auto-sync silencioso do App.jsx, aqui há feedback visível.
+  async function syncProfilesToCloud() {
+    if (!isChefe || !window.cloudTeamAPI?.syncCars) return;
+    const payload = (profilesList || []).map(p => ({
+      clientId: p.id, name: p.name, number: p.number ?? null, color: p.color ?? null,
+    }));
+    if (payload.length === 0) { setSyncMsg('Nenhum perfil para sincronizar.'); return; }
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const r = await window.cloudTeamAPI.syncCars(payload);
+      if (r?.success) {
+        setSyncMsg(`✓ ${payload.length} perfil(is) sincronizado(s) com a nuvem.`);
+      } else {
+        setSyncMsg(`Falha ao sincronizar: ${r?.message || 'erro desconhecido'}`);
+      }
+    } catch (e) {
+      setSyncMsg('Falha ao sincronizar (sem conexão?).');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     if (activeSection === 'sessao') {
@@ -114,19 +168,183 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
     }
   }, [activeSection]);
 
+  useEffect(() => {
+    if (activeSection === 'dispositivos') {
+      loadDeviceMembers();
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection === 'notificacoes') {
+      loadAllMeasurements();
+    }
+  }, [activeSection]);
+
+  // Checklist: carrega ao abrir e faz polling a cada 8s para refletir o
+  // andamento que os celulares vão marcando, em tempo quase real.
+  useEffect(() => {
+    if (activeSection !== 'checklist') return;
+    loadChecklistOverview();
+    const iv = setInterval(() => {
+      loadChecklistOverview();
+      if (checklistCarId) loadChecklistDetail(checklistCarId);
+    }, 8000);
+    return () => clearInterval(iv);
+  }, [activeSection, checklistCarId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadAllMeasurements() {
+    setMeasLoading(true);
+    try {
+      const res = await window.cloudTeamAPI?.getAllMeasurements();
+      const list = Array.isArray(res?.measurements ?? res) ? (res?.measurements ?? res) : [];
+      setAllMeasurements(list);
+    } catch (e) {
+      console.error('Cloud measurements error:', e);
+    } finally {
+      setMeasLoading(false);
+    }
+  }
+
+  // Aprovar uma medição da nuvem: grava como registro local na aba correta
+  // (desktop = centralizador) e marca aprovada no servidor (notifica o mobile).
+  async function handleApproveCloud(m) {
+    try { onApplyCloudRecord?.(m); } catch (e) { console.error('Erro ao aplicar registro:', e); }
+    try { await approveCloudMeasurement(m.id); } catch (e) { console.error('Erro ao aprovar:', e); }
+    loadAllMeasurements();
+  }
+
+  async function handleDismissCloud(m) {
+    try { await dismissCloudMeasurement(m.id); } catch (e) { console.error('Erro ao dispensar:', e); }
+    loadAllMeasurements();
+  }
+
+  async function handleDeleteCloudMeasurement(id) {
+    try {
+      const res = await window.cloudTeamAPI?.deleteMeasurement(id);
+      if (res?.success) {
+        setAllMeasurements(prev => prev.filter(m => m.id !== id));
+      } else {
+        console.error('Delete measurement failed:', res?.message);
+      }
+    } catch (e) {
+      console.error('Delete measurement error:', e);
+    }
+  }
+
+  async function loadDeviceMembers() {
+    setDevLoading(true);
+    try {
+      const res = await window.cloudTeamAPI?.getMembers();
+      const list = Array.isArray(res?.members ?? res) ? (res?.members ?? res) : [];
+      setDeviceMembers(list);
+    } catch (e) {
+      console.error('Cloud members error:', e);
+    } finally {
+      setDevLoading(false);
+    }
+  }
+
+  /* ── Checklist ── */
+  async function loadChecklistOverview() {
+    setChecklistLoading(true);
+    try {
+      const [ov, cars] = await Promise.all([
+        window.cloudTeamAPI?.getChecklistOverview(),
+        cloudCars.length === 0 ? window.cloudTeamAPI?.getCars() : Promise.resolve(null),
+      ]);
+      if (cars) setCloudCars(Array.isArray(cars?.cars ?? cars) ? (cars?.cars ?? cars) : []);
+      const list = Array.isArray(ov?.overview) ? ov.overview : [];
+      setChecklistOverview(list);
+      // Seleciona o 1º carro por padrão se ainda não houver seleção.
+      const firstCar = list[0]?.car?.id || (cars?.cars ?? cars)?.[0]?.id || cloudCars[0]?.id || null;
+      const carId = checklistCarId || firstCar;
+      if (carId) { setChecklistCarId(carId); loadChecklistDetail(carId); }
+    } catch (e) {
+      console.error('Checklist overview error:', e);
+    } finally {
+      setChecklistLoading(false);
+    }
+  }
+
+  async function loadChecklistDetail(carId) {
+    if (!carId) { setChecklistItems([]); return; }
+    try {
+      const res = await window.cloudTeamAPI?.getChecklist(carId);
+      setChecklistItems(Array.isArray(res?.items) ? res.items : []);
+    } catch (e) {
+      console.error('Checklist detail error:', e);
+    }
+  }
+
+  function selectChecklistCar(carId) {
+    setChecklistCarId(carId);
+    loadChecklistDetail(carId);
+  }
+
+  async function handleAddChecklistItem() {
+    const label = newItemLabel.trim();
+    if (!label) return;
+    const targetCarId = newItemScope === 'car' ? checklistCarId : null;
+    try {
+      const r = await window.cloudTeamAPI?.addChecklistItem(label, targetCarId);
+      if (r?.success) {
+        setNewItemLabel('');
+        await loadChecklistDetail(checklistCarId);
+        loadChecklistOverview();
+      } else {
+        window.alert(r?.message || 'Erro ao adicionar item.');
+      }
+    } catch (e) { console.error('Add checklist item error:', e); }
+  }
+
+  async function handleDeleteChecklistItem(itemId) {
+    try {
+      const r = await window.cloudTeamAPI?.deleteChecklistItem(itemId);
+      if (r?.success) {
+        setChecklistItems(prev => prev.filter(i => i.id !== itemId));
+        loadChecklistOverview();
+      }
+    } catch (e) { console.error('Delete checklist item error:', e); }
+  }
+
+  async function handleResetChecklist() {
+    if (!checklistCarId) return;
+    if (!window.confirm('Resetar o checklist deste carro? Todas as marcações serão apagadas.')) return;
+    try {
+      const r = await window.cloudTeamAPI?.resetChecklist(checklistCarId);
+      if (r?.success) { await loadChecklistDetail(checklistCarId); loadChecklistOverview(); }
+    } catch (e) { console.error('Reset checklist error:', e); }
+  }
+
+  // Chefe remove um membro ativo da equipe (libera o seat).
+  async function handleRemoveMember(m) {
+    const nome = m.label || m.username || 'este membro';
+    if (!window.confirm(`Remover ${nome} da equipe? O dispositivo perderá o acesso e o seat será liberado.`)) return;
+    try {
+      const r = await window.cloudTeamAPI?.removeMember(m.id);
+      if (r?.success) {
+        setDeviceMembers(prev => prev.filter(x => x.id !== m.id));
+      } else {
+        window.alert(r?.message || 'Não foi possível remover o membro.');
+      }
+    } catch (e) {
+      console.error('Remove member error:', e);
+    }
+  }
+
   async function loadCloudOverview() {
     setCloudLoading(true);
     try {
-      const [cars, carData, trackCond, members] = await Promise.all([
+      const [cars, trackCond, members, meas] = await Promise.all([
         window.cloudTeamAPI?.getCars(),
-        window.cloudTeamAPI?.getLatestCarData(),
         window.cloudTeamAPI?.getLatestTrackCond(),
         window.cloudTeamAPI?.getMembers(),
+        window.cloudTeamAPI?.getAllMeasurements(),
       ]);
       setCloudCars(Array.isArray(cars?.cars ?? cars) ? (cars?.cars ?? cars) : []);
-      setCloudCarData(Array.isArray(carData?.data ?? carData) ? (carData?.data ?? carData) : []);
       setCloudTrackCond(trackCond?.condition ?? trackCond ?? null);
       setCloudMembers(Array.isArray(members?.members ?? members) ? (members?.members ?? members) : []);
+      setAllMeasurements(Array.isArray(meas?.measurements ?? meas) ? (meas?.measurements ?? meas) : []);
     } catch (e) {
       console.error('Cloud overview error:', e);
     } finally {
@@ -210,8 +428,9 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 
   const NAV = [
     { key: 'conexao',       label: '📡 Conexão'       },
-    { key: 'dispositivos',  label: `📱 Dispositivos ${devices.length > 0 ? `(${devices.length})` : ''}` },
-    { key: 'notificacoes',  label: `🔔 Medições ${pendingCount > 0 ? `(${pendingCount})` : ''}` },
+    { key: 'dispositivos',  label: `📱 Dispositivos ${(deviceMembers.length + devices.length) > 0 ? `(${deviceMembers.length + devices.length})` : ''}` },
+    { key: 'notificacoes',  label: `🔔 Medições ${(pendingCount + (cloudMeasurements?.length || 0)) > 0 ? `(${pendingCount + (cloudMeasurements?.length || 0)})` : ''}` },
+    { key: 'checklist',     label: '✅ Checklist' },
     { key: 'chat',          label: `💬 Chat ${unreadChat > 0 ? `(${unreadChat})` : ''}` },
     { key: 'visao-geral',   label: '📊 Visão Geral' },
     { key: 'sessao',        label: '🏁 Sessão' },
@@ -310,26 +529,22 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
               </div>
             )}
 
-            {/* Medições pendentes da nuvem (qualquer desktop aprova) */}
+            {/* Medições pendentes da nuvem → aprovação acontece na aba Medições
+                (lá o registro é gravado no perfil correto). */}
             {cloudMeasurements?.length > 0 && (
               <div>
                 <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
                   Medições aguardando aprovação
                 </div>
-                {cloudMeasurements.map(ms => (
-                  <div key={ms.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    background: `${C.blue}10`, border: `1px solid ${C.blue}30`, borderRadius: 8,
-                    padding: '8px 12px', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13 }}>
-                      {ms.submitter_name || 'Equipe'} → <strong>{ms.car_name || 'Carro'}</strong>
-                      <span style={{ color: C.textMuted, marginLeft: 6 }}>({ms.category})</span>
-                    </span>
-                    <span style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => approveCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', border: 'none',background: C.green, color: '#fff' }}>Aprovar</button>
-                      <button onClick={() => dismissCloudMeasurement(ms.id)} style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Dispensar</button>
-                    </span>
-                  </div>
-                ))}
+                <button onClick={() => setActiveSection('notificacoes')} style={{
+                  width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  background: `${C.blue}10`, border: `1px solid ${C.blue}30`, borderRadius: 8,
+                  padding: '10px 12px', cursor: 'pointer', color: C.textPrimary }}>
+                  <span style={{ fontSize: 13 }}>
+                    🔔 <strong>{cloudMeasurements.length}</strong> medição{cloudMeasurements.length !== 1 ? 'ões' : ''} aguardando
+                  </span>
+                  <span style={{ fontSize: 12, color: C.blue, fontWeight: 700 }}>Ver na aba Medições →</span>
+                </button>
               </div>
             )}
 
@@ -425,14 +640,79 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 
       {/* ─── Seção: Dispositivos ─── */}
       {activeSection === 'dispositivos' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* Membros da equipe (nuvem) */}
         <div style={theme.card}>
-          <div style={theme.cardTitle}>📱 Dispositivos Conectados</div>
-          {devices.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={theme.cardTitle}>📱 Dispositivos da Equipe</div>
+            <button onClick={loadDeviceMembers} disabled={devLoading} style={{
+              padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              cursor: devLoading ? 'default' : 'pointer',
+              background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`,
+              opacity: devLoading ? 0.6 : 1,
+            }}>{devLoading ? '⏳' : '🔄 Atualizar'}</button>
+          </div>
+          {deviceMembers.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: C.textMuted, fontSize: 13 }}>
-              Nenhum dispositivo conectado ainda.<br/>
-              <span style={{ fontSize: 11 }}>Escaneie o QR Code na aba Conexão.</span>
+              {devLoading ? 'Carregando…' : (<>Nenhum dispositivo vinculado ainda.<br/>
+              <span style={{ fontSize: 11 }}>Compartilhe o QR Code (aba Conexão) para o app mobile entrar.</span></>)}
             </div>
           ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {deviceMembers.map(m => {
+                const online = m.last_login && (Date.now() - new Date(m.last_login).getTime() < 5 * 60 * 1000);
+                return (
+                  <div key={m.id} style={{
+                    padding: '12px 16px', background: `${C.bgCard}80`,
+                    borderRadius: 10, border: `1px solid ${C.border}33`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%',
+                        background: online ? C.green : C.textMuted,
+                        boxShadow: online ? `0 0 6px ${C.green}` : 'none' }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>
+                          {m.label || m.username || '—'}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+                          {m.username && m.label ? `@${m.username} · ` : ''}
+                          {m.last_login ? `visto ${fmtTs(m.last_login)}` : 'nunca conectou'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10,
+                        color: m.is_mobile ? C.blue : C.purple,
+                        background: `${m.is_mobile ? C.blue : C.purple}18`,
+                        padding: '2px 8px', borderRadius: 4,
+                        border: `1px solid ${m.is_mobile ? C.blue : C.purple}30` }}>
+                        {m.is_mobile ? '📱 mobile' : '🖥️ desktop'}
+                      </span>
+                      {m.role === 'chefe' && (
+                        <span style={{ fontSize: 10, color: C.green, background: `${C.green}18`,
+                          padding: '2px 8px', borderRadius: 4, border: `1px solid ${C.green}30` }}>👑 chefe</span>
+                      )}
+                      {isChefe && m.role !== 'chefe' && (
+                        <button onClick={() => handleRemoveMember(m)} title="Remover da equipe" style={{
+                          fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                          background: 'transparent', color: C.accent, border: `1px solid ${C.accent}40` }}>
+                          Remover
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Dispositivos LAN (Wi-Fi local) — legado, exibido só se houver */}
+        {devices.length > 0 && (
+          <div style={theme.card}>
+            <div style={theme.cardTitle}>🌐 Conectados via Wi-Fi local</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {devices.map(d => {
                 const assignedIds = deviceAssignments[d.deviceId] || [];
@@ -504,7 +784,9 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
                 );
               })}
             </div>
-          )}
+          </div>
+        )}
+
         </div>
       )}
 
@@ -512,10 +794,66 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
       {activeSection === 'notificacoes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Medições pendentes */}
+          {/* Histórico de medições da nuvem — lista por perfil, sem sobrescrever */}
+          <div style={theme.card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={theme.cardTitle}>📋 Medições Recebidas</div>
+              <button onClick={loadAllMeasurements} disabled={measLoading} style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                cursor: measLoading ? 'default' : 'pointer',
+                background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`,
+                opacity: measLoading ? 0.6 : 1,
+              }}>{measLoading ? '⏳' : '🔄 Atualizar'}</button>
+            </div>
+
+            {allMeasurements.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: C.textMuted, fontSize: 13 }}>
+                {measLoading ? 'Carregando…' : 'Nenhuma medição recebida ainda.'}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  ...cloudCars.map(c => ({ id: c.id, name: c.name, number: c.number, color: c.color })),
+                  { id: null, name: 'Sem perfil', number: null, color: null },
+                ].map(car => {
+                  const list = allMeasurements.filter(m => (m.target_car_id ?? null) === (car.id ?? null));
+                  if (list.length === 0) return null;
+                  return (
+                    <div key={car.id || 'none'}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%',
+                          background: car.color || C.textMuted, border: `1px solid ${C.border}`, flexShrink: 0 }} />
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary }}>
+                          {car.number != null ? `#${car.number} ` : ''}{car.name}
+                          <span style={{ color: C.textMuted, fontWeight: 400, marginLeft: 6 }}>
+                            · {list.length} medição{list.length !== 1 ? 'ões' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {list.map(m => (
+                          <CloudMeasurementRow key={m.id} m={m} COLORS={C} isChefe={isChefe}
+                            onApprove={m.status === 'pending' ? () => handleApproveCloud(m) : null}
+                            onDismiss={m.status === 'pending' ? () => handleDismissCloud(m) : null}
+                            onDelete={() => handleDeleteCloudMeasurement(m.id)} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {isChefe && allMeasurements.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 11, color: C.textMuted }}>
+                🗑️ Como chefe, você pode deletar qualquer medição desta lista.
+              </div>
+            )}
+          </div>
+
+          {/* Medições LAN (legado — Wi-Fi local), exibidas só se houver */}
           {measurements.filter(m => m.status === 'pending').length > 0 && (
             <div style={theme.card}>
-              <div style={{ ...theme.cardTitle, color: C.orange }}>🔔 Medições Aguardando Aprovação</div>
+              <div style={{ ...theme.cardTitle, color: C.orange }}>🔔 Medições Wi-Fi Aguardando Aprovação</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {measurements.filter(m => m.status === 'pending').map(m => (
                   <MeasurementCard key={m.id} m={m} COLORS={C}
@@ -526,7 +864,7 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
             </div>
           )}
 
-          {/* Cronômetros pendentes */}
+          {/* Cronômetros pendentes (LAN) */}
           {timers.filter(t => t.status === 'pending').length > 0 && (
             <div style={theme.card}>
               <div style={{ ...theme.cardTitle, color: C.orange }}>⏱️ Cronômetros Aguardando Aprovação</div>
@@ -534,45 +872,9 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
                 {timers.filter(t => t.status === 'pending').map(t => (
                   <TimerCard key={t.id} t={t} COLORS={C}
                     onApprove={() => approveTimer(t.id, t.deviceId)}
-                    onDismiss={() => setTimers(prev => prev.map(x => x.id === t.id ? {...x, status:'dismissed'} : x))} />
+                    onDismiss={() => {}} />
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Histórico */}
-          {measurements.filter(m => m.status !== 'pending').length > 0 && (
-            <div style={theme.card}>
-              <div style={theme.cardTitle}>📋 Histórico de Medições</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {measurements.filter(m => m.status !== 'pending').map(m => (
-                  <div key={m.id} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '8px 12px', background: `${C.bgCard}50`, borderRadius: 8,
-                    border: `1px solid ${C.border}22`, opacity: 0.7,
-                  }}>
-                    <div>
-                      <span style={{ fontSize: 12, color: C.textPrimary }}>{m.label}</span>
-                      <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 8 }}>
-                        {m.deviceName} · {fmtTs(m.receivedAt)}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
-                      background: m.status === 'approved' ? `${C.green}18` : `${C.border}22`,
-                      color: m.status === 'approved' ? C.green : C.textMuted,
-                    }}>
-                      {m.status === 'approved' ? '✓ Aplicada' : '— Ignorada'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {measurements.length === 0 && timers.length === 0 && (
-            <div style={{ ...theme.card, textAlign: 'center', padding: '40px 0', color: C.textMuted }}>
-              Nenhuma medição recebida ainda.
             </div>
           )}
         </div>
@@ -658,51 +960,214 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
         );
       })()}
 
+      {/* ─── Seção: Checklist ─── */}
+      {activeSection === 'checklist' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.textPrimary }}>✅ Checklist da Equipe</div>
+            <button onClick={loadChecklistOverview} disabled={checklistLoading} style={{
+              padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: checklistLoading ? 'default' : 'pointer',
+              background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`, opacity: checklistLoading ? 0.6 : 1,
+            }}>{checklistLoading ? '⏳' : '🔄 Atualizar'}</button>
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted }}>
+            {isChefe ? '👑 Você é o chefe: pode criar itens (universais ou de um carro), deletar e resetar. Todos veem o andamento.'
+                     : '👀 Somente o chefe edita o checklist. Você acompanha o andamento aqui e marca pelo app mobile.'}
+          </div>
+
+          {checklistOverview.length === 0 ? (
+            <div style={{ ...theme.card, textAlign: 'center', padding: '28px 0', color: C.textMuted, fontSize: 13 }}>
+              {checklistLoading ? 'Carregando…' : 'Nenhum carro/perfil na nuvem. Sincronize os perfis na Visão Geral.'}
+            </div>
+          ) : (
+            <>
+              {/* Andamento por carro — clique para abrir */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {checklistOverview.map(o => {
+                  const sel = o.car.id === checklistCarId;
+                  const pct = o.total > 0 ? Math.round((o.done / o.total) * 100) : 0;
+                  return (
+                    <button key={o.car.id} onClick={() => selectChecklistCar(o.car.id)} style={{
+                      flex: '1 1 220px', minWidth: 200, maxWidth: 320, textAlign: 'left', cursor: 'pointer',
+                      ...theme.card, padding: 12,
+                      border: `1px solid ${sel ? C.blue : C.border + '33'}`,
+                      boxShadow: sel ? `0 0 0 1px ${C.blue}` : 'none',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <div style={{ width: 12, height: 12, borderRadius: '50%', background: o.car.color || C.blue, border: `1px solid ${C.border}` }} />
+                        <div style={{ fontSize: 13, fontWeight: 800, color: C.textPrimary }}>
+                          {o.car.number != null ? `#${o.car.number} ` : ''}{o.car.name}
+                        </div>
+                        {o.finished && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: C.green, background: `${C.green}18`, padding: '2px 8px', borderRadius: 4 }}>✓ Finalizado</span>}
+                      </div>
+                      <div style={{ height: 6, borderRadius: 4, background: `${C.border}44`, overflow: 'hidden', marginBottom: 6 }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: o.finished ? C.green : C.blue }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: C.textMuted }}>
+                        {o.done}/{o.total} itens{o.lastBy ? ` · último: ${o.lastBy}` : ''}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Detalhe do carro selecionado */}
+              {checklistCarId && (
+                <div style={theme.card}>
+                  {(() => {
+                    const car = checklistOverview.find(o => o.car.id === checklistCarId)?.car;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={theme.cardTitle}>
+                          📋 {car ? `${car.number != null ? `#${car.number} ` : ''}${car.name}` : 'Checklist'}
+                        </div>
+                        {isChefe && (
+                          <button onClick={handleResetChecklist} style={{
+                            fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: 'transparent', color: C.orange, border: `1px solid ${C.orange}40` }}>♻️ Resetar</button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {checklistItems.length === 0 ? (
+                    <div style={{ fontSize: 13, color: C.textMuted, padding: '12px 0' }}>
+                      Nenhum item de checklist {isChefe ? '— adicione abaixo.' : 'ainda.'}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {checklistItems.map(it => (
+                        <div key={it.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                          background: `${C.bgCard}60`, borderRadius: 8, border: `1px solid ${C.border}22`,
+                        }}>
+                          <span style={{ fontSize: 16 }}>{it.checked ? '✅' : '⬜'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, color: C.textPrimary, textDecoration: it.checked ? 'line-through' : 'none', opacity: it.checked ? 0.7 : 1 }}>
+                              {it.label}
+                              {it.scope === 'universal'
+                                ? <span style={{ fontSize: 9, color: C.textMuted, marginLeft: 6, border: `1px solid ${C.border}55`, borderRadius: 3, padding: '1px 5px' }}>universal</span>
+                                : <span style={{ fontSize: 9, color: C.purple, marginLeft: 6, border: `1px solid ${C.purple}55`, borderRadius: 3, padding: '1px 5px' }}>este carro</span>}
+                            </div>
+                            {it.checked && (
+                              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>
+                                por {it.checkedByName || 'equipe'}{it.checkedAt ? ` · ${fmtDateTime(it.checkedAt)}` : ''}
+                              </div>
+                            )}
+                          </div>
+                          {isChefe && (
+                            <button onClick={() => handleDeleteChecklistItem(it.id)} title="Remover item" style={{
+                              fontSize: 12, padding: '3px 9px', borderRadius: 6, cursor: 'pointer',
+                              background: 'transparent', color: C.accent, border: `1px solid ${C.accent}40` }}>🗑️</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Editor do chefe */}
+                  {isChefe && (
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}33` }}>
+                      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                        {['universal', 'car'].map(sc => (
+                          <button key={sc} onClick={() => setNewItemScope(sc)} style={{
+                            fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 6, cursor: 'pointer',
+                            background: newItemScope === sc ? `${C.blue}22` : 'transparent',
+                            color: newItemScope === sc ? C.blue : C.textMuted,
+                            border: `1px solid ${newItemScope === sc ? C.blue : C.border}40` }}>
+                            {sc === 'universal' ? '🌐 Para todos os carros' : '🎯 Só para este carro'}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddChecklistItem(); }}
+                          placeholder="Ex.: Verificar pressão dos pneus"
+                          style={{ flex: 1, padding: '9px 12px', borderRadius: 7, fontSize: 13,
+                            background: C.bgCard, color: C.textPrimary, border: `1px solid ${C.border}` }} />
+                        <button onClick={handleAddChecklistItem} style={{
+                          padding: '9px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
+                          background: C.blue, color: '#fff' }}>+ Adicionar</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {/* ─── Seção: Visão Geral (Cloud) ─── */}
       {activeSection === 'visao-geral' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Header com botão Atualizar */}
+          {/* Header com botões Atualizar e (chefe) Sincronizar perfis */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.textPrimary }}>
               📊 Visão Geral da Equipe — Nuvem
             </div>
-            <button onClick={loadCloudOverview} disabled={cloudLoading} style={{
-              padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: cloudLoading ? 'default' : 'pointer',
-              background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`,
-              opacity: cloudLoading ? 0.6 : 1,
-            }}>
-              {cloudLoading ? '⏳ Carregando...' : '🔄 Atualizar'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {isChefe && (
+                <button onClick={() => syncProfilesToCloud().then(loadCloudOverview)} disabled={syncing} style={{
+                  padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer',
+                  background: `${C.green}18`, color: C.green, border: `1px solid ${C.green}40`,
+                  opacity: syncing ? 0.6 : 1,
+                }}>
+                  {syncing ? '⏳ Sincronizando...' : '🏎️ Sincronizar perfis'}
+                </button>
+              )}
+              <button onClick={loadCloudOverview} disabled={cloudLoading} style={{
+                padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: cloudLoading ? 'default' : 'pointer',
+                background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40`,
+                opacity: cloudLoading ? 0.6 : 1,
+              }}>
+                {cloudLoading ? '⏳ Carregando...' : '🔄 Atualizar'}
+              </button>
+            </div>
           </div>
 
-          {/* Cards de Carros */}
-          {cloudCars.length > 0 && (
+          {/* Feedback da sincronização de perfis (chefe) */}
+          {isChefe && syncMsg && (
+            <div style={{ fontSize: 12, color: syncMsg.startsWith('✓') ? C.green : C.orange,
+              background: `${syncMsg.startsWith('✓') ? C.green : C.orange}12`,
+              border: `1px solid ${syncMsg.startsWith('✓') ? C.green : C.orange}33`,
+              borderRadius: 7, padding: '7px 12px' }}>
+              {syncMsg}
+            </div>
+          )}
+          {isChefe && (
+            <div style={{ fontSize: 11, color: C.textMuted }}>
+              💡 Os perfis criados aqui (chefe) viram os carros que o app mobile da equipe pode selecionar. Renomear um perfil atualiza no mobile automaticamente.
+            </div>
+          )}
+
+          {/* Cards por Perfil/Carro — cada um com pressão E temperatura */}
+          {cloudCars.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.textSecondary }}>🏎️ Carros</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.textSecondary }}>🏎️ Perfis</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 {cloudCars.map((car, idx) => {
-                  // Find matching car data
-                  const carDataArr = Array.isArray(cloudCarData) ? cloudCarData : [];
-                  const latestData = carDataArr.find(d => d.car_id === car.id) || null;
-                  // Find assigned member
+                  // Última medição de cada categoria deste perfil (lista vem ordenada DESC).
+                  const carMeas    = allMeasurements.filter(m => m.target_car_id === car.id);
+                  const latestPres = carMeas.find(m => m.category === 'pressures');
+                  const latestTemp = carMeas.find(m => m.category === 'temperatures');
                   const assignedMember = cloudMembers.find(m => m.id === car.assigned_user_id || m.user_id === car.assigned_user_id);
 
                   return (
                     <div key={car.id || idx} style={{
-                      ...theme.card, flex: '1 1 300px', minWidth: 280, maxWidth: 440,
+                      ...theme.card, flex: '1 1 320px', minWidth: 300, maxWidth: 460,
                     }}>
-                      {/* Car header */}
+                      {/* Header do perfil */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                         <div style={{
                           width: 16, height: 16, borderRadius: '50%',
-                          background: car.color || C.blue,
-                          border: `2px solid ${C.border}`,
-                          flexShrink: 0,
+                          background: car.color || C.blue, border: `2px solid ${C.border}`, flexShrink: 0,
                         }} />
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 800, color: C.textPrimary }}>
-                            #{car.number ?? car.car_number ?? '—'} {car.name ?? car.car_name ?? ''}
+                            #{car.number ?? '—'} {car.name ?? ''}
                           </div>
                           <div style={{ fontSize: 11, color: C.textMuted }}>
                             👤 {assignedMember?.username ?? assignedMember?.name ?? '— não atribuído'}
@@ -710,69 +1175,37 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
                         </div>
                       </div>
 
-                      {/* Tire data */}
-                      {latestData && (
-                        <>
-                          <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase',
-                            letterSpacing: '0.7px', marginBottom: 6 }}>Pneus</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
-                            {[
-                              { pos: 'FL', label: 'Dianteiro Esq.' },
-                              { pos: 'FR', label: 'Dianteiro Dir.' },
-                              { pos: 'RL', label: 'Traseiro Esq.' },
-                              { pos: 'RR', label: 'Traseiro Dir.' },
-                            ].map(({ pos, label }) => {
-                              const pressure = latestData[`tire_pressure_${pos.toLowerCase()}`]
-                                ?? latestData[`pressure_${pos}`]
-                                ?? latestData?.tires?.[pos]?.pressure
-                                ?? null;
-                              return (
-                                <div key={pos} style={{
-                                  padding: '6px 10px', borderRadius: 7,
-                                  background: `${C.bgCard}80`, border: `1px solid ${C.border}22`,
-                                }}>
-                                  <div style={{ fontSize: 10, color: C.textMuted }}>{pos} — {label}</div>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary, fontFamily: 'monospace' }}>
-                                    {pressure !== null && pressure !== undefined ? `${pressure} psi` : '—'}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
-                            {(latestData.compound || latestData.tire_compound) && (
-                              <span style={{ padding: '3px 10px', borderRadius: 5, fontWeight: 600,
-                                background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}30` }}>
-                                {latestData.compound ?? latestData.tire_compound}
-                              </span>
-                            )}
-                            {(latestData.fuel !== undefined && latestData.fuel !== null) && (
-                              <span style={{ padding: '3px 10px', borderRadius: 5,
-                                background: `${C.bgCard}80`, color: C.textSecondary, border: `1px solid ${C.border}33` }}>
-                                ⛽ {latestData.fuel}L
-                              </span>
-                            )}
-                          </div>
-                          {latestData.notes && (
-                            <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>
-                              {latestData.notes}
-                            </div>
-                          )}
-                        </>
-                      )}
-                      {!latestData && (
-                        <div style={{ fontSize: 12, color: C.textMuted }}>Sem dados de pneus disponíveis.</div>
-                      )}
+                      {/* Box Pressões */}
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase',
+                          letterSpacing: '0.7px', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>🔧 Pressões dos Pneus</span>
+                          {latestPres && <span style={{ textTransform: 'none', letterSpacing: 0 }}>{fmtTs(latestPres.created_at)}</span>}
+                        </div>
+                        {latestPres
+                          ? <PressurePayload p={latestPres.payload} COLORS={C} />
+                          : <div style={{ fontSize: 12, color: C.textMuted }}>Sem pressões registradas.</div>}
+                      </div>
+
+                      {/* Box Temperatura */}
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase',
+                          letterSpacing: '0.7px', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                          <span>🌡️ Temperatura & Pista</span>
+                          {latestTemp && <span style={{ textTransform: 'none', letterSpacing: 0 }}>{fmtTs(latestTemp.created_at)}</span>}
+                        </div>
+                        {latestTemp
+                          ? <TempPayload p={latestTemp.payload} COLORS={C} />
+                          : <div style={{ fontSize: 12, color: C.textMuted }}>Sem temperatura registrada.</div>}
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-          )}
-
-          {cloudCars.length === 0 && !cloudLoading && (
+          ) : (
             <div style={{ ...theme.card, textAlign: 'center', padding: '28px 0', color: C.textMuted, fontSize: 13 }}>
-              Nenhum carro registrado na nuvem.
+              {cloudLoading ? 'Carregando…' : 'Nenhum perfil sincronizado na nuvem. Sincronize os Perfis no desktop chefe.'}
             </div>
           )}
 
@@ -1019,6 +1452,127 @@ export default function EquipeTab({ onApplyMeasurement, profilesList = [] }) {
 }
 
 /* ── Sub-componentes ─────────────────────────────────────────────────── */
+
+/** Renderiza o payload de uma medição de pressões (FL/FR/RL/RR, fria/quente). */
+function PressurePayload({ p, COLORS: C }) {
+  const positions = [
+    { key: 'FL', label: 'DE — Diant. Esq.' },
+    { key: 'FR', label: 'DD — Diant. Dir.' },
+    { key: 'RL', label: 'TE — Tras. Esq.'  },
+    { key: 'RR', label: 'TD — Tras. Dir.'  },
+  ];
+  const val = (v) => (v != null && v !== '' ? v : null);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      {positions.map(({ key, label }) => {
+        const cell = (p && p[key]) || {};
+        const fria = val(cell.fria), quente = val(cell.quente);
+        return (
+          <div key={key} style={{ padding: '6px 10px', borderRadius: 7,
+            background: `${C.bgCard}80`, border: `1px solid ${C.border}22` }}>
+            <div style={{ fontSize: 10, color: C.textMuted }}>{label}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace' }}>
+              {fria != null && <span style={{ color: C.blue }}>❄ {fria}</span>}
+              {fria != null && quente != null && <span style={{ color: C.textMuted }}> · </span>}
+              {quente != null && <span style={{ color: C.orange }}>🔥 {quente}</span>}
+              {fria == null && quente == null && <span style={{ color: C.textMuted }}>—</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Renderiza o payload de uma medição de temperatura/condições de pista. */
+function TempPayload({ p, COLORS: C }) {
+  const items = [
+    { l: 'Temp. Pista', v: p?.tempPista,     u: '°C' },
+    { l: 'Temp. Ar',    v: p?.tempAmbiente,  u: '°C' },
+    { l: 'Umidade',     v: p?.umidade,       u: '%'  },
+    { l: 'Condição',    v: p?.condicaoPista, u: ''   },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      {items.map(({ l, v, u }) => (
+        <div key={l} style={{ padding: '6px 10px', borderRadius: 7,
+          background: `${C.bgCard}80`, border: `1px solid ${C.border}22` }}>
+          <div style={{ fontSize: 10, color: C.textMuted }}>{l}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary, fontFamily: 'monospace' }}>
+            {v != null && v !== '' ? `${v}${u}` : '—'}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Uma linha da lista de medições da nuvem (histórico, não sobrescreve). */
+function CloudMeasurementRow({ m, COLORS: C, isChefe, onApprove, onDismiss, onDelete }) {
+  const isPres = m.category === 'pressures';
+  const isTemp = m.category === 'temperatures';
+  const statusMap = {
+    pending:   { l: 'Pendente',   c: C.orange },
+    approved:  { l: 'Aprovada',   c: C.green  },
+    dismissed: { l: 'Dispensada', c: C.textMuted },
+  };
+  const st = statusMap[m.status] || statusMap.pending;
+  return (
+    <div style={{ padding: '10px 12px', background: `${C.bgCard}60`,
+      borderRadius: 9, border: `1px solid ${C.border}22` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>
+          {isPres ? '🔧 Pressões' : isTemp ? '🌡️ Temperatura' : `📋 ${m.category}`}
+          <span style={{ color: C.textMuted, fontWeight: 400, marginLeft: 8 }}>
+            {m.submitter_name || 'Equipe'} · {fmtDateTime(m.created_at)}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+            color: st.c, background: `${st.c}18`, border: `1px solid ${st.c}33` }}>
+            {st.l}
+          </span>
+          {isChefe && (
+            <button onClick={onDelete} title="Deletar medição" style={{
+              fontSize: 12, padding: '3px 9px', borderRadius: 6, cursor: 'pointer',
+              background: 'transparent', color: C.accent, border: `1px solid ${C.accent}40`,
+            }}>🗑️</button>
+          )}
+        </div>
+      </div>
+      {isPres && <PressurePayload p={m.payload} COLORS={C} />}
+      {isTemp && <TempPayload p={m.payload} COLORS={C} />}
+      {!isPres && !isTemp && (
+        <div style={{ fontSize: 11, color: C.textMuted, wordBreak: 'break-all' }}>
+          {JSON.stringify(m.payload)}
+        </div>
+      )}
+      {m.payload?.observacoes && (
+        <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>
+          📝 {m.payload.observacoes}
+        </div>
+      )}
+
+      {/* Ações de aprovação — só para medições pendentes */}
+      {m.status === 'pending' && (onApprove || onDismiss) && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          {onApprove && (
+            <button onClick={onApprove} style={{
+              flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 12, fontWeight: 700,
+              background: `${C.green}18`, color: C.green, border: `1px solid ${C.green}40`, cursor: 'pointer',
+            }}>✅ Aprovar e registrar</button>
+          )}
+          {onDismiss && (
+            <button onClick={onDismiss} style={{
+              padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+              background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}`, cursor: 'pointer',
+            }}>❌ Dispensar</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MeasurementCard({ m, COLORS: C, onApprove, onDismiss }) {
   const [expanded, setExpanded] = useState(false);

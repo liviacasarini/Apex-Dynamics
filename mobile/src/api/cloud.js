@@ -82,9 +82,9 @@ export async function login(username, password, deviceId) {
  * Cadastro + entrada num passo (Opção C): cria a conta e entra no workspace
  * via join_token. Conta nasce ativa; vínculo nasce 'pending'. Persiste o JWT.
  */
-export async function registerAndJoin({ joinToken, username, phone, password, deviceId }) {
+export async function registerAndJoin({ joinToken, username, phone, password, deviceId, acceptedLegalVersion }) {
   const data = await request('POST', '/api/team/mobile/register-and-join', {
-    joinToken, username, phone, password, deviceId,
+    joinToken, username, phone, password, deviceId, acceptedLegalVersion,
   });
   if (data?.token) await setToken(data.token);
   return data;
@@ -117,6 +117,23 @@ export function getCars() {
 /** Envia uma medição para o Carro alvo → fila de aprovação dos desktops. */
 export function submitMeasurement({ teamId, targetCarId, category, payload }) {
   return request('POST', '/api/team/measurements', { teamId, targetCarId, category, payload });
+}
+
+/** Consulta o status de uma submissão (pending/approved/dismissed) — usado no polling. */
+export function getMeasurementStatus(id) {
+  return request('GET', `/api/team/measurements/${id}/status`);
+}
+
+/* ── Checklist ──────────────────────────────────────────────────── */
+
+/** Itens do checklist de um carro (universal + específicos) + estado. */
+export function getChecklist(carId) {
+  return request('GET', `/api/team/checklist?carId=${encodeURIComponent(carId)}`);
+}
+
+/** Marca/desmarca um item do checklist de um carro. */
+export function checkChecklistItem(carId, itemId, checked) {
+  return request('POST', '/api/team/checklist/check', { carId, itemId, checked });
 }
 
 /* ── Chat ──────────────────────────────────────────────────────── */

@@ -180,6 +180,7 @@ contextBridge.exposeInMainWorld('teamAPI', {
 contextBridge.exposeInMainWorld('cloudTeamAPI', {
   getMembers:        ()           => ipcRenderer.invoke('cloud:getMembers'),
   getCars:           ()           => ipcRenderer.invoke('cloud:getCars'),
+  syncCars:          (cars)       => ipcRenderer.invoke('cloud:syncCars', { cars }),
   getMessages:       ()           => ipcRenderer.invoke('cloud:getMessages'),
   sendMessage:       (content)    => ipcRenderer.invoke('cloud:sendMessage', { content }),
   triggerEmergency:  (reason)     => ipcRenderer.invoke('cloud:triggerEmergency', { reason }),
@@ -199,6 +200,16 @@ contextBridge.exposeInMainWorld('cloudTeamAPI', {
   removeMember:           (memberId)         => ipcRenderer.invoke('cloud:removeMember', { memberId }),
   setMemberRole:          (memberId, role)   => ipcRenderer.invoke('cloud:setMemberRole', { memberId, role }),
   getPendingMeasurements: ()                 => ipcRenderer.invoke('cloud:getPendingMeasurements'),
+  getAllMeasurements:     ()                 => ipcRenderer.invoke('cloud:getAllMeasurements'),
   approveMeasurement:     (id)               => ipcRenderer.invoke('cloud:approveMeasurement', { id }),
   dismissMeasurement:     (id)               => ipcRenderer.invoke('cloud:dismissMeasurement', { id }),
+  deleteMeasurement:      (id)               => ipcRenderer.invoke('cloud:deleteMeasurement', { id }),
+
+  /* ── Checklist ── */
+  getChecklistOverview:   ()                      => ipcRenderer.invoke('cloud:getChecklistOverview'),
+  getChecklist:           (carId)                 => ipcRenderer.invoke('cloud:getChecklist', { carId }),
+  addChecklistItem:       (label, targetCarId)    => ipcRenderer.invoke('cloud:addChecklistItem', { label, targetCarId }),
+  deleteChecklistItem:    (id)                    => ipcRenderer.invoke('cloud:deleteChecklistItem', { id }),
+  checkChecklistItem:     (carId, itemId, checked)=> ipcRenderer.invoke('cloud:checkChecklistItem', { carId, itemId, checked }),
+  resetChecklist:         (carId)                 => ipcRenderer.invoke('cloud:resetChecklist', { carId }),
 });

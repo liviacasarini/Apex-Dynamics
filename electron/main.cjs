@@ -66,6 +66,14 @@ async function pollCertStatus() {
       `/api/auth/cert-status?ev=${ev}&icv=${icv}&wscv=${wscv}`,
       { Authorization: `Bearer ${sessionToken}` }
     );
+    // Conta banida/inativa detectada no poll → encerra a sessão na hora.
+    if (res.status === 403) {
+      console.warn('[wsc-poll] conta bloqueada/banida — forçando logout');
+      try { mainWindow?.webContents.send('license:forcedLogout', { banned: true }); } catch { /* noop */ }
+      sseStopped = true; stopSSE(); stopChatPolling(); stopWscPolling();
+      sessionToken = null; sessionHwid = null;
+      return;
+    }
     if (res.ok && res.data?.changed) {
       console.log('[wsc-poll] mudança detectada — renovando certificado');
       await refreshCertificateBackground();
@@ -598,8 +606,13 @@ function httpsGet(path, extraHeaders = {}) {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
-        try { resolve({ ok: true, data: JSON.parse(data) }); }
-        catch { resolve({ ok: false, offline: false, error: 'Resposta inválida.' }); }
+        let parsed = null;
+        try { parsed = data ? JSON.parse(data) : null; } catch { parsed = null; }
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        // Expõe o status HTTP para o chamador distinguir 403 (banido/inativo)
+        // e 401 (token inválido/expirado) de uma simples queda de rede (offline).
+        if (ok) resolve({ ok: true, status: res.statusCode, data: parsed });
+        else    resolve({ ok: false, status: res.statusCode, data: parsed, offline: false, error: parsed?.message || 'Resposta inválida.' });
       });
     });
     req.on('timeout', () => { req.destroy(); resolve({ ok: false, offline: true, error: 'Timeout.' }); });
@@ -1169,6 +1182,10 @@ ipcMain.handle('license:checkCertStatus', async (_event, { ev, token, icv, wscv 
       `/api/auth/cert-status?ev=${ev ?? -1}&icv=${icv ?? -1}&wscv=${wscv ?? -1}`,
       { Authorization: `Bearer ${authToken}` }
     );
+    // 403 = conta banida/inativa; 401 = token inválido/expirado. Ambos são
+    // respostas DEFINITIVAS do servidor (online) → o cliente deve encerrar o acesso.
+    if (res.status === 403) return { success: false, banned: true, message: res.data?.message || 'Conta inativa ou banida.' };
+    if (res.status === 401) return { success: false, unauthorized: true };
     if (!res.ok) return { success: false, changed: false, offline: res.offline };
     return { success: true, ...res.data };
   } catch {
@@ -1455,6 +1472,7 @@ function cloudRequest(method, urlPath, body = null) {
 
 ipcMain.handle('cloud:getMembers',        () => cloudRequest('GET',  '/api/team/members'));
 ipcMain.handle('cloud:getCars',           () => cloudRequest('GET',  '/api/team/cars'));
+ipcMain.handle('cloud:syncCars',          (_e, { cars }) => cloudRequest('POST', '/api/team/cars/sync', { cars }));
 ipcMain.handle('cloud:getMessages',       () => cloudRequest('GET',  '/api/team/messages?limit=50'));
 ipcMain.handle('cloud:sendMessage',       (_e, { content }) => cloudRequest('POST', '/api/team/messages', { content }));
 ipcMain.handle('cloud:triggerEmergency',  (_e, { reason }) => cloudRequest('POST',  '/api/team/emergency', { reason }));
@@ -1488,8 +1506,18 @@ ipcMain.handle('cloud:rejectMember',      (_e, { memberId }) => cloudRequest('PO
 ipcMain.handle('cloud:removeMember',      (_e, { memberId }) => cloudRequest('POST', `/api/team/members/${memberId}/remove`, {}));
 ipcMain.handle('cloud:setMemberRole',     (_e, { memberId, role }) => cloudRequest('POST', `/api/team/members/${memberId}/role`, { role }));
 ipcMain.handle('cloud:getPendingMeasurements', () => cloudRequest('GET', '/api/team/measurements/pending'));
+ipcMain.handle('cloud:getAllMeasurements', () => cloudRequest('GET', '/api/team/measurements'));
 ipcMain.handle('cloud:approveMeasurement',(_e, { id }) => cloudRequest('POST', `/api/team/measurements/${id}/approve`, {}));
 ipcMain.handle('cloud:dismissMeasurement',(_e, { id }) => cloudRequest('POST', `/api/team/measurements/${id}/dismiss`, {}));
+ipcMain.handle('cloud:deleteMeasurement', (_e, { id }) => cloudRequest('DELETE', `/api/team/measurements/${id}`));
+
+/* ── Checklist ── */
+ipcMain.handle('cloud:getChecklistOverview', () => cloudRequest('GET', '/api/team/checklist/overview'));
+ipcMain.handle('cloud:getChecklist', (_e, { carId }) => cloudRequest('GET', `/api/team/checklist?carId=${encodeURIComponent(carId)}`));
+ipcMain.handle('cloud:addChecklistItem', (_e, { label, targetCarId }) => cloudRequest('POST', '/api/team/checklist/items', { label, targetCarId: targetCarId || null }));
+ipcMain.handle('cloud:deleteChecklistItem', (_e, { id }) => cloudRequest('DELETE', `/api/team/checklist/items/${id}`));
+ipcMain.handle('cloud:checkChecklistItem', (_e, { carId, itemId, checked }) => cloudRequest('POST', '/api/team/checklist/check', { carId, itemId, checked }));
+ipcMain.handle('cloud:resetChecklist', (_e, { carId }) => cloudRequest('POST', '/api/team/checklist/reset', { carId }));
 
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 

@@ -1,4 +1,8 @@
-/* legalText.js — Termos de Uso e Política de Privacidade — ApexDynamics */
+/* legalText.js — Termos de Uso e Política de Privacidade — ApexDynamics (MOBILE)
+ * CÓPIA VERBATIM de src/license/legalText.js (versão desktop). Mantenha os dois
+ * em sincronia ao alterar — o texto jurídico deve ser idêntico nas duas plataformas.
+ * LEGAL_VERSION é enviado ao servidor no cadastro como prova de qual versão foi aceita. */
+export const LEGAL_VERSION = '1.3';
 export const APEX_LEGAL = {
   updatedAt: 'Junho/2026 — Versão 1.3',
 

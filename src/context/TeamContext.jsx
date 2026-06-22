@@ -34,6 +34,7 @@ export function TeamProvider({ children }) {
   const seenClientIds   = useRef(new Set()); // UUIDs de msgs LAN já adicionadas → evita duplicata do polling
   const typingTimers    = useRef({});        // deviceId → clearTimeout handle
   const loadWorkspaceRef = useRef(null);     // mirror estável de loadWorkspace p/ o handler SSE
+  const applyApprovedRef = useRef(null);     // App registra aqui o sync de medições aprovadas
 
   // Carrega info do servidor e histórico de medições ao montar
   useEffect(() => {
@@ -159,6 +160,11 @@ export function TeamProvider({ children }) {
           loadWorkspaceRef.current?.();
           break;
         case 'measurement_approved':
+          // Propaga para ESTE desktop: aplica localmente as medições aprovadas
+          // que ainda não foram aplicadas aqui (gate anti-duplicata no App).
+          loadWorkspaceRef.current?.();
+          applyApprovedRef.current?.();
+          break;
         case 'measurement_dismissed':
         case 'team_join_approved':
         case 'team_removed':
@@ -392,6 +398,7 @@ export function TeamProvider({ children }) {
       loadWorkspace, loadJoinToken,
       approveMember, rejectMember, setMemberRole,
       approveCloudMeasurement, dismissCloudMeasurement,
+      applyApprovedRef,
     }}>
       {children}
     </TeamContext.Provider>

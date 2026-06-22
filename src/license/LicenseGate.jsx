@@ -316,6 +316,26 @@ export default function LicenseGate({ children }) {
         const statusRes = await window.electronAPI
           .checkCertStatus(certEv, session.token, certIcv, certWscv).catch(() => null);
 
+        // SEGURANÇA: o servidor respondeu (online) que a conta está banida/inativa
+        // → encerra a sessão local mesmo com certificado ainda válido. Só age em
+        // resposta DEFINITIVA; se estiver offline, mantém a tolerância do cert.
+        if (statusRes?.banned) {
+          await clearSession();
+          try { await window.electronAPI.logout?.(); } catch { /* noop */ }
+          setBlock(classifyBlock({ banned: true, message: statusRes.message })
+            || { title: 'Conta bloqueada', text: 'Seu acesso foi encerrado pelo administrador. Entre em contato pelo número abaixo.' });
+          setStatus('login');
+          return;
+        }
+        if (statusRes?.unauthorized) {
+          await clearSession();
+          try { await window.electronAPI.logout?.(); } catch { /* noop */ }
+          setStatus('login');
+          setMessage('Sua sessão expirou. Faça login novamente.');
+          setIsError(true);
+          return;
+        }
+
         if (statusRes?.success && statusRes.changed && session.token) {
           // Entitlements mudaram — busca novo certificado com as abas atualizadas
           const renewal = await window.electronAPI.requestCertificate(session.token);

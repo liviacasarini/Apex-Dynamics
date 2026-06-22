@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef, memo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView, Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera/next';
 import { COLORS } from '../context/AppContext';
 import { useCloud } from '../context/CloudContext';
+import { APEX_LEGAL, LEGAL_VERSION } from '../legal/legalText';
 
 const StableScanner = memo(function StableScanner({ onScan }) {
   return (
@@ -43,6 +44,8 @@ export default function RegisterScreen({ navigation }) {
   const [confirm, setConfirm]     = useState('');
   const [loading, setLoading]     = useState(false);
   const [focus, setFocus]         = useState(null);
+  const [accepted, setAccepted]   = useState(false);
+  const [legalDoc, setLegalDoc]   = useState(null); // null | 'termos' | 'privacidade'
   const lockRef = useRef(false);
 
   useEffect(() => { requestPermission(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -59,9 +62,10 @@ export default function RegisterScreen({ navigation }) {
     if (!username.trim() || username.trim().length < 3) return Alert.alert('Usuário', 'Informe um nome de usuário (mín. 3 caracteres).');
     if (!password || password.length < 6) return Alert.alert('Senha', 'A senha precisa ter ao menos 6 caracteres.');
     if (password !== confirm) return Alert.alert('Senha', 'As senhas não conferem.');
+    if (!accepted) return Alert.alert('Termos', 'É preciso ler e aceitar os Termos de Uso e a Política de Privacidade para criar a conta.');
     setLoading(true);
     try {
-      const res = await registerAndJoin({ joinToken, username: username.trim(), phone: phone.trim(), password });
+      const res = await registerAndJoin({ joinToken, username: username.trim(), phone: phone.trim(), password, acceptedLegalVersion: LEGAL_VERSION });
       if (!res?.success) {
         Alert.alert('Falha no cadastro', res?.message || 'Não foi possível criar a conta.');
       }
@@ -130,7 +134,21 @@ export default function RegisterScreen({ navigation }) {
           secureTextEntry placeholder="repita a senha" placeholderTextColor={COLORS.textMuted}
           onFocus={() => setFocus('c')} onBlur={() => setFocus(null)} />
 
-        <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSubmit} disabled={loading} activeOpacity={0.8}>
+        {/* Aceite obrigatório dos Termos e Privacidade */}
+        <View style={s.consentRow}>
+          <TouchableOpacity style={[s.checkbox, accepted && s.checkboxOn]} onPress={() => setAccepted(v => !v)} activeOpacity={0.8}>
+            {accepted ? <Text style={s.checkboxMark}>✓</Text> : null}
+          </TouchableOpacity>
+          <Text style={s.consentText}>
+            Li e aceito os{' '}
+            <Text style={s.consentLink} onPress={() => setLegalDoc('termos')}>Termos de Uso</Text>
+            {' '}e a{' '}
+            <Text style={s.consentLink} onPress={() => setLegalDoc('privacidade')}>Política de Privacidade</Text>,
+            inclusive o tratamento de dados na nuvem ao usar a Equipe.
+          </Text>
+        </View>
+
+        <TouchableOpacity style={[s.btn, (loading || !accepted) && { opacity: 0.5 }]} onPress={handleSubmit} disabled={loading || !accepted} activeOpacity={0.8}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>CRIAR CONTA E ENTRAR</Text>}
         </TouchableOpacity>
 
@@ -138,6 +156,28 @@ export default function RegisterScreen({ navigation }) {
           <Text style={s.linkText}>← Escanear outro QR</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Modal de leitura dos documentos legais */}
+      <Modal visible={!!legalDoc} animationType="slide" onRequestClose={() => setLegalDoc(null)}>
+        <View style={s.modalWrap}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>
+              {legalDoc === 'termos' ? 'TERMOS DE USO' : 'POLÍTICA DE PRIVACIDADE'}
+            </Text>
+            <TouchableOpacity onPress={() => setLegalDoc(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={s.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={s.modalBody} contentContainerStyle={{ paddingBottom: 28 }}>
+            <Text style={s.modalText}>
+              {legalDoc === 'termos' ? APEX_LEGAL.termos : APEX_LEGAL.privacidade}
+            </Text>
+          </ScrollView>
+          <TouchableOpacity style={s.modalAccept} onPress={() => { setAccepted(true); setLegalDoc(null); }} activeOpacity={0.85}>
+            <Text style={s.modalAcceptText}>LI E ACEITO</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -159,8 +199,24 @@ const s = StyleSheet.create({
   label: { fontSize: 10, color: COLORS.textMuted, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6, marginTop: 12 },
   input: { backgroundColor: COLORS.bgCard, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 14, paddingVertical: 12, color: COLORS.textPrimary, fontSize: 15 },
   inputFocus: { borderColor: COLORS.accent },
-  btn: { marginTop: 22, backgroundColor: COLORS.accent, borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
+  btn: { marginTop: 18, backgroundColor: COLORS.accent, borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
   btnText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
   linkBtn: { alignItems: 'center', paddingVertical: 12 },
   linkText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+
+  consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 20, paddingRight: 4 },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  checkboxOn: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  checkboxMark: { color: '#fff', fontSize: 15, fontWeight: '900', lineHeight: 18 },
+  consentText: { flex: 1, color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 18 },
+  consentLink: { color: COLORS.accent, fontWeight: '800', textDecorationLine: 'underline' },
+
+  modalWrap: { flex: 1, backgroundColor: COLORS.bg },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: 50, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  modalTitle: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '900', letterSpacing: 1 },
+  modalClose: { color: COLORS.textSecondary, fontSize: 22, fontWeight: '700' },
+  modalBody: { flex: 1, paddingHorizontal: 18, paddingTop: 14 },
+  modalText: { color: COLORS.textSecondary, fontSize: 12.5, lineHeight: 19 },
+  modalAccept: { backgroundColor: COLORS.accent, paddingVertical: 16, alignItems: 'center', margin: 16, borderRadius: 10 },
+  modalAcceptText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
 });
