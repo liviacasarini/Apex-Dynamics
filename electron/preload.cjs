@@ -212,4 +212,7 @@ contextBridge.exposeInMainWorld('cloudTeamAPI', {
   deleteChecklistItem:    (id)                    => ipcRenderer.invoke('cloud:deleteChecklistItem', { id }),
   checkChecklistItem:     (carId, itemId, checked)=> ipcRenderer.invoke('cloud:checkChecklistItem', { carId, itemId, checked }),
   resetChecklist:         (carId)                 => ipcRenderer.invoke('cloud:resetChecklist', { carId }),
+
+  /** Exporta um HTML de relatório como PDF (printToPDF no main, salva onde o usuário escolher). */
+  exportReportPdf:        ({ html, suggestedName }) => ipcRenderer.invoke('report:exportPdf', { html, suggestedName }),
 });

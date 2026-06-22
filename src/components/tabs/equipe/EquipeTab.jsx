@@ -301,6 +301,90 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
     setShowReport(true);
   }
 
+  /** Monta um HTML completo e autônomo (tema claro, A4) do relatório p/ o PDF. */
+  function buildReportHtml() {
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const team = esc(joinTokenInfo?.teamName || 'Equipe');
+    const now  = new Date().toLocaleString('pt-BR');
+    const PRES = [['FL', 'DE — Diant. Esq.'], ['FR', 'DD — Diant. Dir.'], ['RL', 'TE — Tras. Esq.'], ['RR', 'TD — Tras. Dir.']];
+
+    const carsHtml = (cloudCars || []).map(car => {
+      const cm   = (allMeasurements || []).filter(m => m.target_car_id === car.id);
+      const pres = cm.find(m => m.category === 'pressures')?.payload || null;
+      const temp = cm.find(m => m.category === 'temperatures')?.payload || null;
+      const cl   = (reportChecklist || []).find(o => o.car?.id === car.id);
+      const presRows = PRES.map(([k, label]) => {
+        const c = (pres && pres[k]) || {};
+        const f = (c.fria   != null && c.fria   !== '') ? `❄ ${esc(c.fria)}`   : '';
+        const q = (c.quente != null && c.quente !== '') ? `🔥 ${esc(c.quente)}` : '';
+        return `<tr><td class="lbl">${label}</td><td class="val">${[f, q].filter(Boolean).join('  ·  ') || '—'}</td></tr>`;
+      }).join('');
+      const tempRows = [['Temp. Pista', temp?.tempPista, '°C'], ['Temp. Ar', temp?.tempAmbiente, '°C'], ['Umidade', temp?.umidade, '%'], ['Condição', temp?.condicaoPista, '']]
+        .map(([l, v, u]) => `<tr><td class="lbl">${l}</td><td class="val">${v != null && v !== '' ? esc(v) + u : '—'}</td></tr>`).join('');
+      const clTxt = cl ? `${cl.done}/${cl.total} itens${cl.finished ? ' · ✓ finalizado' : ''}${cl.lastBy ? ' · último: ' + esc(cl.lastBy) : ''}` : 'Sem checklist.';
+      return `<section class="car">
+        <h2><span class="dot" style="background:${esc(car.color || '#e63946')}"></span>${car.number != null ? '#' + esc(car.number) + ' ' : ''}${esc(car.name)}</h2>
+        <div class="cols">
+          <div class="col"><h3>🔧 Pressões</h3><table>${presRows}</table></div>
+          <div class="col"><h3>🌡️ Temperatura</h3><table>${tempRows}</table></div>
+        </div>
+        <div class="cl"><b>✅ Checklist:</b> ${clTxt}</div>
+      </section>`;
+    }).join('') || '<p class="muted">Nenhum perfil/carro na nuvem.</p>';
+
+    const tc = cloudTrackCond;
+    const trackHtml = tc ? `<section class="car"><h2>🌤️ Condições de Pista</h2><div class="cols">
+      <div class="col"><table>
+        <tr><td class="lbl">Temp. Asfalto</td><td class="val">${(tc.asphalt_temp ?? tc.track_temp) != null ? esc(tc.asphalt_temp ?? tc.track_temp) + '°C' : '—'}</td></tr>
+        <tr><td class="lbl">Temp. Ar</td><td class="val">${tc.air_temp != null ? esc(tc.air_temp) + '°C' : '—'}</td></tr></table></div>
+      <div class="col"><table>
+        <tr><td class="lbl">Umidade</td><td class="val">${tc.humidity != null ? esc(tc.humidity) + '%' : '—'}</td></tr>
+        <tr><td class="lbl">Condição</td><td class="val">${esc(tc.condition ?? tc.status ?? '—')}</td></tr></table></div>
+      </div></section>` : '';
+
+    const members = (cloudMembers || []).map(m => esc(m.username || m.label || '—')).join(', ') || 'Nenhum membro.';
+
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório — ${team}</title><style>
+      @page { size: A4; margin: 16mm; }
+      * { box-sizing: border-box; }
+      body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: #1a1a1a; margin: 0; }
+      .head { border-bottom: 3px solid #e63946; padding-bottom: 10px; margin-bottom: 18px; }
+      .head h1 { margin: 0; font-size: 21px; }
+      .head .meta { color: #666; font-size: 12px; margin-top: 4px; }
+      section.car { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 13px; page-break-inside: avoid; }
+      section.car h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+      .cols { display: flex; gap: 28px; }
+      .col { flex: 1; }
+      .col h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #888; margin: 0 0 4px; }
+      table { width: 100%; border-collapse: collapse; }
+      td { padding: 4px 6px; font-size: 13px; border-bottom: 1px solid #eee; }
+      td.lbl { color: #555; } td.val { text-align: right; font-family: 'Courier New', monospace; font-weight: 700; }
+      .cl { margin-top: 10px; font-size: 13px; }
+      .members { border-top: 1px solid #ddd; padding-top: 10px; font-size: 13px; }
+      .muted { color: #888; }
+      footer { margin-top: 18px; font-size: 10px; color: #999; text-align: center; }
+    </style></head><body>
+      <div class="head"><h1>Relatório de Fim de Evento — ${team}</h1><div class="meta">Gerado em ${now} · ApexDynamics</div></div>
+      ${carsHtml}${trackHtml}
+      <div class="members"><b>👥 Membros:</b> ${members}</div>
+      <footer>ApexDynamics — relatório gerado automaticamente</footer>
+    </body></html>`;
+  }
+
+  /** Exporta o relatório como PDF (printToPDF no main). Fallback: window.print(). */
+  async function handleExportReportPdf() {
+    const html = buildReportHtml();
+    const slug = (joinTokenInfo?.teamName || 'equipe').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const suggestedName = `relatorio-${slug || 'equipe'}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    if (window.cloudTeamAPI?.exportReportPdf) {
+      const r = await window.cloudTeamAPI.exportReportPdf({ html, suggestedName });
+      if (r && !r.success && !r.canceled) window.alert(r.message || 'Falha ao gerar o PDF.');
+    } else {
+      window.print();
+    }
+  }
+
   async function handleAddChecklistItem() {
     const label = newItemLabel.trim();
     if (!label) return;
@@ -1252,7 +1336,7 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
                     <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Gerado em {new Date().toLocaleString('pt-BR')}</div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => window.print()} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40` }}>🖨️ Imprimir / PDF</button>
+                    <button onClick={handleExportReportPdf} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40` }}>🖨️ Salvar PDF</button>
                     <button onClick={() => setShowReport(false)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Fechar</button>
                   </div>
                 </div>
