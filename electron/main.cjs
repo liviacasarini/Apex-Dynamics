@@ -13,7 +13,7 @@
  *  5. Após 5 dias: requer internet para renovar ou bloqueia
  */
 
-const { app, BrowserWindow, Menu, ipcMain, Notification, dialog, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, Notification, dialog, safeStorage, shell } = require('electron');
 const path   = require('path');
 const fs     = require('fs');
 const http   = require('http');
@@ -1518,6 +1518,40 @@ ipcMain.handle('cloud:addChecklistItem', (_e, { label, targetCarId }) => cloudRe
 ipcMain.handle('cloud:deleteChecklistItem', (_e, { id }) => cloudRequest('DELETE', `/api/team/checklist/items/${id}`));
 ipcMain.handle('cloud:checkChecklistItem', (_e, { carId, itemId, checked }) => cloudRequest('POST', '/api/team/checklist/check', { carId, itemId, checked }));
 ipcMain.handle('cloud:resetChecklist', (_e, { carId }) => cloudRequest('POST', '/api/team/checklist/reset', { carId }));
+
+/* ── Relatório → PDF (renderiza um HTML dedicado num BrowserWindow oculto e
+ *    usa webContents.printToPDF; salva onde o usuário escolher e abre). ── */
+ipcMain.handle('report:exportPdf', async (_e, { html, suggestedName }) => {
+  let tmpFile = null;
+  let pdfWin = null;
+  try {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Salvar relatório em PDF',
+      defaultPath: suggestedName || 'relatorio-equipe.pdf',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (canceled || !filePath) return { success: false, canceled: true };
+
+    // HTML em arquivo temporário (evita limites/CSP de data: URL).
+    tmpFile = path.join(os.tmpdir(), `apex-report-${Date.now()}.html`);
+    fs.writeFileSync(tmpFile, html, 'utf8');
+
+    pdfWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+    await pdfWin.loadFile(tmpFile);
+    await new Promise((r) => setTimeout(r, 300)); // garante layout/fontes
+
+    const pdf = await pdfWin.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    fs.writeFileSync(filePath, pdf);
+    shell.openPath(filePath);
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('[report] export pdf error:', err.message);
+    return { success: false, message: err.message };
+  } finally {
+    if (pdfWin) { try { pdfWin.destroy(); } catch { /* noop */ } }
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* noop */ } }
+  }
+});
 
 /* ── App lifecycle ─────────────────────────────────────────────────── */
 
