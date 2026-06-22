@@ -94,18 +94,18 @@ Três peças, modelo **100% nuvem** (a antiga LAN/WebSocket está morta/inerte):
 
 ---
 
-## 4. FEATURES NOVAS a implementar (pedido do usuário)
+## 4. FEATURES NOVAS (pedido do usuário)
 
-Implementar 4 features na aba Equipe. Decisões já tomadas onde aplicável.
+Status: **4.3 Comparar carros ✅ FEITO** e **4.4 Relatório ✅ FEITO** (ambas desktop-only, já no build 1.2.0 e commitadas). **4.1 Presença** e **4.2 Atribuir tarefa** ficaram PENDENTES (precisam de migration + servidor + deploy + mobile + 2 builds — não foram iniciadas para não parar no meio).
 
-### 4.1. Sistema de PRESENÇA (roll call)
+### 4.1. Sistema de PRESENÇA (roll call) — ⛔ PENDENTE (não iniciado)
 - **Objetivo**: ver quem está no autódromo hoje (check-in pelo mobile).
 - **Sugestão de modelo**: tabela `attendance (team_id, user_id, username, status 'presente'|'ausente', updated_at)` OU reaproveitar `last_login`. Melhor: presença explícita do dia.
   - `POST /api/team/attendance` (membro marca presente/ausente) ; `GET /api/team/attendance` (lista).
 - **Mobile**: botão "Cheguei / Sair" na Home ou aba dedicada.
 - **Desktop**: card "Presença" na aba Dispositivos ou Visão Geral — lista quem está presente, com horário do check-in.
 
-### 4.2. ATRIBUIR TAREFA a alguém
+### 4.2. ATRIBUIR TAREFA a alguém — ⛔ PENDENTE (não iniciado)
 - **Objetivo**: além do checklist, uma tarefa dirigida a um membro, com push.
 - **Modelo**: `tasks (id, team_id, title, description?, assigned_to user_id, assigned_to_name, created_by, status 'aberta'|'concluida', car_id?, created_at, done_at)`.
   - `POST /api/team/tasks` (chefe cria) ; `GET /api/team/tasks` ; `POST /api/team/tasks/:id/done` (responsável conclui) ; `DELETE` (chefe).
@@ -113,16 +113,15 @@ Implementar 4 features na aba Equipe. Decisões já tomadas onde aplicável.
 - **Desktop**: aba ou bloco "Tarefas" — chefe cria e atribui a um membro (dropdown de membros), vê status.
 - **Mobile**: lista "Minhas tarefas", botão concluir. Push ao receber.
 
-### 4.3. COMPARAR CARROS (lado a lado)
-- **Objetivo**: pressão/temperatura dos carros na mesma tela.
-- **Sem schema novo** — usa as submissões/medições já existentes. Em **Visão Geral** (desktop), adicionar um modo "Comparar": selecionar 2+ carros e mostrar as últimas medições em colunas lado a lado (FL/FR/RL/RR fria/quente + temp/condições), com destaque de diferença.
-- Só desktop (tela maior). Leitura, sem novo endpoint (reusa `getAllMeasurements`/overview).
+### 4.3. COMPARAR CARROS (lado a lado) — ✅ FEITO (desktop)
+- **Onde**: aba Equipe → **Visão Geral** → card "📐 Comparar Carros" (aparece com ≥2 carros).
+- Tabela: colunas = carros; linhas = Pressão DE/DD/TE/TD (❄ fria / 🔥 quente) + Temp. Pista/Ar/Umidade/Condição. Lê de `allMeasurements` (última medição por carro). Sem endpoint novo, sem schema.
 
-### 4.4. RELATÓRIO DE FIM DE EVENTO (somente o CHEFE gera)
-- **Objetivo**: PDF/resumo do evento com tudo.
-- **Conteúdo**: por carro — medições (pressão/temp) do período, checklist (itens + quem fez + finalização), condições de pista, membros presentes, tarefas.
-- **Implementação sugerida**: botão "Gerar relatório" (só chefe) na Visão Geral → monta o relatório no desktop a partir dos dados da nuvem (getAllMeasurements + checklist/overview + attendance + tasks) e gera um **PDF/HTML** (pode usar window.print do Electron para PDF, ou uma lib). Não precisa de endpoint novo se os dados já vêm das APIs existentes; opcionalmente um `GET /api/team/report?from=&to=` que agrega tudo.
-- **Gate**: visível/acionável só para `isChefe` (joinTokenInfo.joinToken).
+### 4.4. RELATÓRIO DE FIM DE EVENTO (somente o CHEFE) — ✅ FEITO (desktop)
+- **Onde**: aba Equipe → **Visão Geral** → botão "📄 Gerar relatório" (só chefe, gate `isChefe`).
+- Abre um **overlay**: por carro mostra pressões (`PressurePayload`), temperatura (`TempPayload`) e resumo do checklist (done/total, finalizado, último a marcar — via `getChecklistOverview`), + lista de membros + data/hora. Botão "🖨️ Imprimir / PDF" usa `window.print()`.
+- `handleGenerateReport` em EquipeTab; estados `showReport`/`reportChecklist`.
+- **Melhoria futura**: o `window.print()` imprime a página inteira (sem CSS @media print dedicado). Para um PDF polido, usar `webContents.printToPDF` no main process ou estilo de impressão dedicado. Attendance/tasks entram no relatório quando 4.1/4.2 existirem.
 
 ---
 

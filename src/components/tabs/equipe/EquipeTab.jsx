@@ -101,6 +101,10 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
   const [syncing,           setSyncing]           = useState(false);
   const [syncMsg,           setSyncMsg]           = useState('');
 
+  // Cloud: Relatório de fim de evento (chefe gera)
+  const [showReport,        setShowReport]        = useState(false);
+  const [reportChecklist,   setReportChecklist]   = useState([]);
+
   // Cloud: Checklist
   const [checklistOverview, setChecklistOverview] = useState([]);
   const [checklistCarId,    setChecklistCarId]    = useState(null);
@@ -279,6 +283,22 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
   function selectChecklistCar(carId) {
     setChecklistCarId(carId);
     loadChecklistDetail(carId);
+  }
+
+  // Relatório de fim de evento (somente chefe). Agrega os dados já carregados
+  // (medições por carro + membros) e busca o resumo do checklist.
+  async function handleGenerateReport() {
+    try {
+      const [ov] = await Promise.all([
+        window.cloudTeamAPI?.getChecklistOverview(),
+        allMeasurements.length === 0 ? loadAllMeasurements() : Promise.resolve(),
+      ]);
+      setReportChecklist(Array.isArray(ov?.overview) ? ov.overview : []);
+    } catch (e) {
+      console.error('Report data error:', e);
+      setReportChecklist([]);
+    }
+    setShowReport(true);
   }
 
   async function handleAddChecklistItem() {
@@ -1110,6 +1130,14 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {isChefe && (
+                <button onClick={handleGenerateReport} style={{
+                  padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: `${C.purple}18`, color: C.purple, border: `1px solid ${C.purple}40`,
+                }}>
+                  📄 Gerar relatório
+                </button>
+              )}
+              {isChefe && (
                 <button onClick={() => syncProfilesToCloud().then(loadCloudOverview)} disabled={syncing} style={{
                   padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer',
                   background: `${C.green}18`, color: C.green, border: `1px solid ${C.green}40`,
@@ -1208,6 +1236,119 @@ export default function EquipeTab({ onApplyMeasurement, onApplyCloudRecord, prof
               {cloudLoading ? 'Carregando…' : 'Nenhum perfil sincronizado na nuvem. Sincronize os Perfis no desktop chefe.'}
             </div>
           )}
+
+          {/* Relatório de fim de evento (overlay) */}
+          {showReport && (
+            <div onClick={() => setShowReport(false)} style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto',
+            }}>
+              <div onClick={e => e.stopPropagation()} style={{
+                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, width: '100%', maxWidth: 820, padding: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: C.textPrimary }}>📄 Relatório de Fim de Evento</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Gerado em {new Date().toLocaleString('pt-BR')}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => window.print()} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: `${C.blue}18`, color: C.blue, border: `1px solid ${C.blue}40` }}>🖨️ Imprimir / PDF</button>
+                    <button onClick={() => setShowReport(false)} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'transparent', color: C.textMuted, border: `1px solid ${C.border}` }}>Fechar</button>
+                  </div>
+                </div>
+
+                {cloudCars.length === 0 ? (
+                  <div style={{ color: C.textMuted, fontSize: 13 }}>Nenhum perfil/carro na nuvem.</div>
+                ) : cloudCars.map(car => {
+                  const cm = allMeasurements.filter(m => m.target_car_id === car.id);
+                  const pres = cm.find(m => m.category === 'pressures')?.payload || null;
+                  const temp = cm.find(m => m.category === 'temperatures')?.payload || null;
+                  const cl = reportChecklist.find(o => o.car.id === car.id);
+                  return (
+                    <div key={car.id} style={{ ...theme.card, marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: '50%', background: car.color || C.blue }} />
+                        <span style={{ fontSize: 15, fontWeight: 800, color: C.textPrimary }}>{car.number != null ? `#${car.number} ` : ''}{car.name}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>🔧 Pressões</div>
+                      {pres ? <PressurePayload p={pres} COLORS={C} /> : <div style={{ fontSize: 12, color: C.textMuted }}>Sem pressões.</div>}
+                      <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.7px', margin: '10px 0 6px' }}>🌡️ Temperatura</div>
+                      {temp ? <TempPayload p={temp} COLORS={C} /> : <div style={{ fontSize: 12, color: C.textMuted }}>Sem temperatura.</div>}
+                      <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.7px', margin: '10px 0 4px' }}>✅ Checklist</div>
+                      <div style={{ fontSize: 13, color: C.textPrimary }}>
+                        {cl ? `${cl.done}/${cl.total} itens${cl.finished ? ' · ✓ finalizado' : ''}${cl.lastBy ? ` · último: ${cl.lastBy}` : ''}` : 'Sem checklist.'}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{ ...theme.card }}>
+                  <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 8 }}>👥 Membros</div>
+                  <div style={{ fontSize: 13, color: C.textPrimary }}>
+                    {cloudMembers.length > 0 ? cloudMembers.map(m => m.username || m.label || '—').join(', ') : 'Nenhum membro.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Comparar carros lado a lado */}
+          {cloudCars.length >= 2 && (() => {
+            const cmp = cloudCars.map(car => {
+              const cm = allMeasurements.filter(m => m.target_car_id === car.id);
+              return {
+                car,
+                pres: cm.find(m => m.category === 'pressures')?.payload || null,
+                temp: cm.find(m => m.category === 'temperatures')?.payload || null,
+              };
+            });
+            const presRows = [{ k: 'FL', l: 'Pressão DE' }, { k: 'FR', l: 'Pressão DD' }, { k: 'RL', l: 'Pressão TE' }, { k: 'RR', l: 'Pressão TD' }];
+            const tempRows = [{ k: 'tempPista', l: 'Temp. Pista', u: '°C' }, { k: 'tempAmbiente', l: 'Temp. Ar', u: '°C' }, { k: 'umidade', l: 'Umidade', u: '%' }, { k: 'condicaoPista', l: 'Condição', u: '' }];
+            const th = { textAlign: 'left', padding: '7px 10px', fontSize: 11, color: C.textMuted, fontWeight: 700, borderBottom: `1px solid ${C.border}44` };
+            const td = { padding: '7px 10px', fontSize: 12, color: C.textPrimary, fontFamily: 'monospace', borderBottom: `1px solid ${C.border}22` };
+            const tdL = { ...td, fontFamily: 'inherit', color: C.textSecondary, fontWeight: 600 };
+            const presCell = (p, k) => { const c = p?.[k] || {}; const f = c.fria, q = c.quente; if (f == null && q == null) return '—'; return `${f != null ? `❄${f}` : ''}${f != null && q != null ? ' ' : ''}${q != null ? `🔥${q}` : ''}`; };
+            return (
+              <div style={theme.card}>
+                <div style={theme.cardTitle}>📐 Comparar Carros</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 360 }}>
+                    <thead>
+                      <tr>
+                        <th style={th}></th>
+                        {cmp.map(({ car }) => (
+                          <th key={car.id} style={th}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '50%', background: car.color || C.blue, display: 'inline-block' }} />
+                              {car.number != null ? `#${car.number} ` : ''}{car.name}
+                            </span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {presRows.map(r => (
+                        <tr key={r.k}>
+                          <td style={tdL}>{r.l}</td>
+                          {cmp.map(({ car, pres }) => <td key={car.id} style={td}>{presCell(pres, r.k)}</td>)}
+                        </tr>
+                      ))}
+                      {tempRows.map(r => (
+                        <tr key={r.k}>
+                          <td style={tdL}>{r.l}</td>
+                          {cmp.map(({ car, temp }) => {
+                            const v = temp?.[r.k];
+                            return <td key={car.id} style={td}>{v != null && v !== '' ? `${v}${r.u}` : '—'}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 10, color: C.textMuted, marginTop: 8 }}>❄ fria · 🔥 quente · valores da última medição de cada carro.</div>
+              </div>
+            );
+          })()}
 
           {/* Track Conditions */}
           <div style={theme.card}>
